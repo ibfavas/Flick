@@ -1,0 +1,101 @@
+=== SINGLE LIVE diag: correct=342 wrong=22 no-match=26 ===
+wrong pairs: circle->c=12 v->l=7 check->v=3
+WRONG true=circle got=c P1[c=0.955 circle=0.863 square=0.830] P2[not run]
+NO-MATCH true=circle P1[c=0.922 circle=0.909 square=0.847] best=c:0.922 P2[circle=0.931 c=0.922 square=0.873] best=circle:0.931
+WRONG true=circle got=c P1[c=0.893 circle=0.819 square=0.814] P2[not run]
+WRONG true=circle got=c P1[c=0.937 circle=0.897 square=0.865] P2[not run]
+NO-MATCH true=circle P1[c=0.875 circle=0.852 square=0.802] best=c:0.875 P2[circle=0.904 c=0.875 square=0.854] best=circle:0.904
+WRONG true=circle got=c P1[c=0.917 circle=0.826 square=0.798] P2[not run]
+NO-MATCH true=circle P1[circle=0.881 square=0.864 triangle=0.791] best=circle:0.881 P2[circle=0.910 square=0.895 star=0.832] best=circle:0.910
+WRONG true=circle got=c P1[c=0.963 circle=0.864 square=0.818] P2[not run]
+WRONG true=circle got=c P1[c=0.925 circle=0.889 square=0.831] P2[not run]
+NO-MATCH true=circle P1[c=0.846 circle=0.842 square=0.836] best=c:0.846 P2[circle=0.896 square=0.888 c=0.847] best=circle:0.896
+WRONG true=circle got=c P1[c=0.946 circle=0.866 square=0.802] P2[not run]
+WRONG true=circle got=c P1[c=0.905 circle=0.828 square=0.794] P2[not run]
+WRONG true=circle got=c P1[c=0.948 circle=0.888 square=0.839] P2[not run]
+WRONG true=circle got=c P1[c=0.952 circle=0.903 square=0.844] P2[not run]
+NO-MATCH true=circle P1[circle=0.829 square=0.816 c=0.771] best=circle:0.829 P2[circle=0.892 square=0.880 star=0.810] best=circle:0.892
+NO-MATCH true=circle P1[square=0.844 circle=0.815 c=0.804] best=square:0.844 P2[square=0.906 circle=0.880 star=0.836] best=square:0.906
+NO-MATCH true=circle P1[circle=0.850 square=0.825 c=0.791] best=circle:0.850 P2[circle=0.905 square=0.882 star=0.825] best=circle:0.905
+WRONG true=circle got=c P1[c=0.956 circle=0.919 square=0.852] P2[not run]
+WRONG true=circle got=c P1[c=0.938 circle=0.898 square=0.832] P2[not run]
+NO-MATCH true=triangle P1[triangle=0.807 square=0.789 star=0.756] best=triangle:0.807 P2[triangle=0.885 square=0.855 star=0.823] best=triangle:0.885
+NO-MATCH true=triangle P1[triangle=0.837 square=0.831 star=0.815] best=triangle:0.837 P2[triangle=0.881 square=0.861 star=0.849] best=triangle:0.881
+NO-MATCH true=triangle P1[triangle=0.824 square=0.816 star=0.808] best=triangle:0.824 P2[triangle=0.880 square=0.856 star=0.853] best=triangle:0.880
+NO-MATCH true=check P1[check=0.870 v=0.862 line=0.759] best=check:0.870 P2[check=0.870 v=0.869 star=0.820] best=check:0.870
+WRONG true=check got=v P1[v=0.892 check=0.836 l=0.695] P2[not run]
+WRONG true=check got=v P1[v=0.896 check=0.806 l=0.681] P2[not run]
+WRONG true=check got=v P1[v=0.881 check=0.796 line=0.736] P2[not run]
+NO-MATCH true=check P1[v=0.868 check=0.858 l=0.694] best=v:0.868 P2[v=0.872 check=0.858 star=0.829] best=v:0.872
+NO-MATCH true=check P1[check=0.865 v=0.851 l=0.669] best=check:0.865 P2[check=0.865 v=0.856 star=0.827] best=check:0.865
+NO-MATCH true=check P1[v=0.875 check=0.874 l=0.690] best=v:0.875 P2[v=0.880 check=0.874 triangle=0.830] best=v:0.880
+NO-MATCH true=check P1[check=0.885 v=0.867 l=0.668] best=check:0.885 P2[check=0.885 v=0.870 star=0.829] best=check:0.885
+WRONG true=v got=l P1[l=0.892 v=0.853 line=0.661] P2[not run]
+WRONG true=v got=l P1[l=0.897 v=0.858 star=0.660] P2[not run]
+WRONG true=v got=l P1[l=0.905 v=0.866 star=0.653] P2[not run]
+NO-MATCH true=v P1[v=0.847 l=0.760 square=0.642] best=v:0.847 P2[v=0.868 square=0.804 star=0.784] best=v:0.868
+NO-MATCH true=v P1[v=0.842 l=0.775 star=0.658] best=v:0.842 P2[v=0.867 l=0.785 square=0.777] best=v:0.867
+WRONG true=v got=l P1[l=0.918 v=0.868 square=0.676] P2[not run]
+NO-MATCH true=v P1[v=0.875 l=0.864 star=0.659] best=v:0.875 P2[v=0.890 l=0.867 square=0.784] best=v:0.890
+WRONG true=v got=l P1[l=0.883 v=0.851 line=0.658] P2[not run]
+NO-MATCH true=v P1[v=0.909 l=0.908 star=0.674] best=v:0.909 P2[v=0.917 l=0.908 square=0.810] best=v:0.917
+NO-MATCH true=v P1[l=0.898 v=0.874 star=0.676] best=l:0.898 P2[l=0.901 v=0.889 square=0.797] best=l:0.901
+NO-MATCH true=v P1[v=0.890 l=0.870 square=0.694] best=v:0.890 P2[v=0.900 l=0.870 square=0.836] best=v:0.900
+WRONG true=v got=l P1[l=0.907 v=0.867 line=0.669] P2[not run]
+WRONG true=v got=l P1[l=0.899 v=0.848 line=0.646] P2[not run]
+NO-MATCH true=star P1[star=0.835 triangle=0.814 square=0.808] best=star:0.835 P2[star=0.891 triangle=0.863 square=0.845] best=star:0.891
+NO-MATCH true=star P1[square=0.820 star=0.818 v=0.818] best=square:0.820 P2[star=0.883 square=0.862 triangle=0.824] best=star:0.883
+NO-MATCH true=c P1[c=0.830 s=0.716 square=0.696] best=c:0.830 P2[c=0.872 square=0.846 triangle=0.838] best=c:0.872
+NO-MATCH true=c P1[c=0.845 square=0.727 star=0.705] best=c:0.845 P2[c=0.883 square=0.860 circle=0.831] best=c:0.883
+NO-MATCH true=z P1[z=0.799 l=0.781 square=0.694] best=z:0.799 P2[z=0.868 square=0.803 l=0.781] best=z:0.868
+=== MULTI LIVE diag: correct=341 wrong=30 no-match=19 ===
+wrong pairs: circle->c=20 v->l=7 check->v=3
+WRONG true=circle got=c P1[c=0.964 circle=0.865 square=0.839] P2[not run]
+WRONG true=circle got=c P1[c=0.963 circle=0.910 square=0.855] P2[not run]
+WRONG true=circle got=c P1[c=0.950 square=0.821 circle=0.820] P2[not run]
+WRONG true=circle got=c P1[c=0.960 circle=0.898 square=0.876] P2[not run]
+WRONG true=circle got=c P1[c=0.925 circle=0.854 square=0.812] P2[not run]
+WRONG true=circle got=c P1[c=0.907 circle=0.836 square=0.812] P2[not run]
+WRONG true=circle got=c P1[c=0.958 circle=0.828 square=0.807] P2[not run]
+NO-MATCH true=circle P1[circle=0.883 square=0.873 c=0.804] best=circle:0.883 P2[circle=0.913 square=0.903 triangle=0.833] best=circle:0.913
+WRONG true=circle got=c P1[c=0.938 circle=0.906 square=0.867] P2[not run]
+WRONG true=circle got=c P1[c=0.968 circle=0.865 square=0.828] P2[not run]
+WRONG true=circle got=c P1[c=0.971 circle=0.891 square=0.840] P2[not run]
+WRONG true=circle got=c P1[c=0.941 circle=0.885 square=0.856] P2[not run]
+WRONG true=circle got=c P1[c=0.908 square=0.843 circle=0.843] P2[not run]
+WRONG true=circle got=c P1[c=0.906 circle=0.863 square=0.820] P2[not run]
+WRONG true=circle got=c P1[c=0.962 circle=0.869 square=0.813] P2[not run]
+WRONG true=circle got=c P1[c=0.954 circle=0.829 square=0.804] P2[not run]
+WRONG true=circle got=c P1[c=0.968 circle=0.888 square=0.849] P2[not run]
+WRONG true=circle got=c P1[c=0.959 circle=0.905 square=0.852] P2[not run]
+NO-MATCH true=circle P1[circle=0.830 c=0.827 square=0.823] best=circle:0.830 P2[circle=0.893 square=0.883 c=0.829] best=circle:0.893
+NO-MATCH true=circle P1[circle=0.881 square=0.853 c=0.784] best=circle:0.881 P2[circle=0.917 square=0.889 star=0.826] best=circle:0.917
+NO-MATCH true=circle P1[c=0.869 square=0.851 circle=0.816] best=c:0.869 P2[square=0.911 circle=0.882 c=0.871] best=square:0.911
+NO-MATCH true=circle P1[circle=0.845 c=0.834 square=0.821] best=circle:0.845 P2[circle=0.902 square=0.874 c=0.835] best=circle:0.902
+NO-MATCH true=circle P1[circle=0.852 c=0.850 square=0.836] best=circle:0.852 P2[circle=0.906 square=0.890 c=0.851] best=circle:0.906
+WRONG true=circle got=c P1[c=0.964 circle=0.920 square=0.861] P2[not run]
+WRONG true=circle got=c P1[c=0.914 circle=0.884 square=0.822] P2[not run]
+WRONG true=circle got=c P1[c=0.970 circle=0.900 square=0.841] P2[not run]
+NO-MATCH true=triangle P1[triangle=0.846 square=0.830 star=0.815] best=triangle:0.846 P2[triangle=0.888 square=0.860 star=0.847] best=triangle:0.888
+WRONG true=check got=v P1[v=0.895 check=0.846 l=0.695] P2[not run]
+WRONG true=check got=v P1[v=0.894 check=0.835 l=0.686] P2[not run]
+WRONG true=check got=v P1[v=0.878 check=0.826 line=0.742] P2[not run]
+NO-MATCH true=check P1[check=0.889 v=0.864 l=0.697] best=check:0.889 P2[check=0.889 v=0.870 star=0.829] best=check:0.889
+NO-MATCH true=check P1[check=0.893 v=0.870 l=0.681] best=check:0.893 P2[check=0.893 v=0.876 triangle=0.832] best=check:0.893
+NO-MATCH true=check P1[check=0.886 v=0.869 l=0.693] best=check:0.886 P2[check=0.886 v=0.869 triangle=0.828] best=check:0.886
+NO-MATCH true=check P1[check=0.880 v=0.871 l=0.692] best=check:0.880 P2[check=0.880 v=0.876 triangle=0.837] best=check:0.880
+WRONG true=v got=l P1[l=0.897 v=0.862 line=0.665] P2[not run]
+WRONG true=v got=l P1[l=0.896 v=0.863 star=0.662] P2[not run]
+WRONG true=v got=l P1[l=0.916 v=0.871 star=0.656] P2[not run]
+WRONG true=v got=l P1[l=0.919 v=0.874 square=0.671] P2[not run]
+NO-MATCH true=v P1[v=0.880 l=0.874 star=0.662] best=v:0.880 P2[v=0.895 l=0.876 square=0.782] best=v:0.895
+WRONG true=v got=l P1[l=0.895 v=0.859 line=0.664] P2[not run]
+NO-MATCH true=v P1[v=0.912 l=0.905 star=0.678] best=v:0.912 P2[v=0.919 l=0.905 square=0.808] best=v:0.919
+NO-MATCH true=v P1[l=0.898 v=0.881 star=0.675] best=l:0.898 P2[l=0.900 v=0.895 square=0.793] best=l:0.900
+NO-MATCH true=v P1[v=0.897 l=0.882 square=0.690] best=v:0.897 P2[v=0.907 l=0.882 square=0.834] best=v:0.907
+WRONG true=v got=l P1[l=0.910 v=0.878 line=0.673] P2[not run]
+WRONG true=v got=l P1[l=0.906 v=0.856 line=0.650] P2[not run]
+NO-MATCH true=v P1[v=0.923 l=0.904 star=0.669] best=v:0.923 P2[v=0.928 l=0.904 square=0.812] best=v:0.928
+NO-MATCH true=star P1[star=0.839 triangle=0.818 square=0.810] best=star:0.839 P2[star=0.891 triangle=0.865 square=0.845] best=star:0.891
+NO-MATCH true=star P1[v=0.820 square=0.819 star=0.817] best=v:0.820 P2[star=0.880 square=0.861 triangle=0.828] best=star:0.880
+NO-MATCH true=z P1[z=0.796 l=0.783 square=0.692] best=z:0.796 P2[z=0.869 square=0.801 l=0.783] best=z:0.869

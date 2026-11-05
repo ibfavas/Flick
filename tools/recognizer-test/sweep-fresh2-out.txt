@@ -1,0 +1,26 @@
+=== FRESH omax27-m025 (omax=0.27 free=20 full=40 margin=0.025) ===
+SINGLE VARIATIONS: total=390 correct=389 (99%) wrong=0 no-match=1
+SINGLE FALSE MATCHES: 3 / 100 (3%)
+SINGLE TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+SINGLE SLOPPY: total=390 correct=377 (96%) wrong=0 no-match=13 (reversed 185/193 correct)
+SINGLE REV: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE LIVE: total=390 correct=350 (89%) wrong=17 no-match=23
+MULTI VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI FALSE MATCHES: 6 / 100 (6%)
+MULTI TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+MULTI SLOPPY: total=390 correct=382 (97%) wrong=0 no-match=8 (reversed 187/193 correct)
+MULTI REV: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI LIVE: total=390 correct=325 (83%) wrong=40 no-match=25
+=== FRESH omax29-m025 (omax=0.29 free=20 full=40 margin=0.025) ===
+SINGLE VARIATIONS: total=390 correct=389 (99%) wrong=1 no-match=0
+SINGLE FALSE MATCHES: 3 / 100 (3%)
+SINGLE TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+SINGLE SLOPPY: total=390 correct=377 (96%) wrong=0 no-match=13 (reversed 185/193 correct)
+SINGLE REV: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE LIVE: total=390 correct=350 (89%) wrong=17 no-match=23
+MULTI VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI FALSE MATCHES: 6 / 100 (6%)
+MULTI TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+MULTI SLOPPY: total=390 correct=382 (97%) wrong=0 no-match=8 (reversed 187/193 correct)
+MULTI REV: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI LIVE: total=390 correct=327 (83%) wrong=40 no-match=23

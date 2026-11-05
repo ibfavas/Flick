@@ -1,0 +1,39 @@
+=== omax27-m025 (omax=0.27 free=20 full=40 margin=0.025) ===
+SINGLE VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE FALSE MATCHES: 2 / 100 (2%)
+SINGLE TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+SINGLE SLOPPY: total=390 correct=386 (98%) wrong=0 no-match=4 (reversed 177/177 correct)
+SINGLE REV: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE LIVE: total=390 correct=348 (89%) wrong=22 no-match=20
+MULTI VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI FALSE MATCHES: 4 / 100 (4%)
+MULTI TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+MULTI SLOPPY: total=390 correct=389 (99%) wrong=0 no-match=1 (reversed 177/177 correct)
+MULTI REV: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI LIVE: total=390 correct=351 (90%) wrong=28 no-match=11
+=== omax29-m025 (omax=0.29 free=20 full=40 margin=0.025) ===
+SINGLE VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE FALSE MATCHES: 2 / 100 (2%)
+SINGLE TILT: total=104 correct=103 (99%) wrong=0 no-match=1
+SINGLE SLOPPY: total=390 correct=386 (98%) wrong=0 no-match=4 (reversed 177/177 correct)
+SINGLE REV: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE LIVE: total=390 correct=348 (89%) wrong=22 no-match=20
+MULTI VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI FALSE MATCHES: 4 / 100 (4%)
+MULTI TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+MULTI SLOPPY: total=390 correct=389 (99%) wrong=0 no-match=1 (reversed 177/177 correct)
+MULTI REV: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI LIVE: total=390 correct=351 (90%) wrong=28 no-match=11
+=== omax28-m025-confirm (omax=0.28 free=20 full=40 margin=0.025) ===
+SINGLE VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE FALSE MATCHES: 2 / 100 (2%)
+SINGLE TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+SINGLE SLOPPY: total=390 correct=386 (98%) wrong=0 no-match=4 (reversed 177/177 correct)
+SINGLE REV: total=390 correct=390 (100%) wrong=0 no-match=0
+SINGLE LIVE: total=390 correct=348 (89%) wrong=22 no-match=20
+MULTI VARIATIONS: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI FALSE MATCHES: 4 / 100 (4%)
+MULTI TILT: total=104 correct=104 (100%) wrong=0 no-match=0
+MULTI SLOPPY: total=390 correct=389 (99%) wrong=0 no-match=1 (reversed 177/177 correct)
+MULTI REV: total=390 correct=390 (100%) wrong=0 no-match=0
+MULTI LIVE: total=390 correct=350 (89%) wrong=28 no-match=12

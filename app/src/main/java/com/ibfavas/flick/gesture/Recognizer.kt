@@ -162,6 +162,56 @@ object Recognizer {
      *   All of this is measured on synthetic shapes in the harness,
      *   not on a real device: whether a finger lifts early by
      *   10-20% as often as the suite assumes is unmeasured.
+     *
+     * v1.3.0 changes, each measured in tools/recognizer-test
+     * (sweep3-7, sweep-fresh; same suites, same seeds):
+     * - Orientation penalty raised from 0.20 to 0.28, margin
+     *   lowered from 0.03 to 0.025. The orientation penalty is the
+     *   one signal that separates the confusable pairs: a truncated
+     *   circle IS a 'c' by every static geometric measure (end gap,
+     *   arc-length ratio, centroid offset all favour 'c'), and the
+     *   $N/DTW scores already encode the arc-span difference but
+     *   favour 'c' anyway. The templates of a confusable pair differ
+     *   in indicative angle by 24-36 degrees while the true
+     *   template's angle stays close to the candidate's, so a
+     *   stronger penalty pushes the neighbour down and a slightly
+     *   looser margin lets the true template win draws where it was
+     *   already ahead by 0.025-0.03.
+     * - Rejected: a decoupled threshold (accept on the shape score
+     *   without the orientation penalty) — false matches exploded
+     *   from 2 to 10-12/100 single, because the threshold is doing
+     *   real work against unknowns; a pass-2 confirmation/override
+     *   rule — pass 2 agrees with pass 1's wrong winner on 22/22
+     *   single and 28/30 multi, so there is nothing to overturn;
+     *   a stronger penalty at 0.30 — it cost one tilted 'c' at
+     *   -25 degrees, whose indicative angle rotates onto the
+     *   circle template's angle, so the true template eats the
+     *   penalty while the closed circle escapes it; a wider free
+     *   zone (15 degrees) — it halves LIVE wrong launches but
+     *   costs tilted and sloppy matches, because single-sample
+     *   templates have no rotated variants to absorb the tilt.
+     *   The optimum is a broad plateau: 0.27, 0.28 and 0.29 all
+     *   measure the same on the shipped harness; 0.28 is the
+     *   middle, and on fresh seeds 0.29 puts a wrong launch into
+     *   the clean VARIATIONS suite while 0.27 loses two multi
+     *   LIVE matches, so 0.28 it is.
+     *
+     * v1.3.0 measured results (seeded harness; same suites, same
+     * seeds, run against this file):
+     * - SINGLE: 390/390 correct (100%), 2/100 false (2%), TILT
+     *   104/104 (100%), SLOPPY 386/390 (98%, 0 wrong), REV 390/390
+     *   (100%, 0 wrong), LIVE 348/390 (89%, 22 wrong) vs 342/390
+     *   (87%, 22 wrong) at v1.2.2.
+     * - MULTI (3 samples): 390/390 correct (100%), 4/100 false
+     *   (4%), TILT 104/104 (100%), SLOPPY 389/390 (99%, 0 wrong),
+     *   REV 390/390 (100%, 0 wrong), LIVE 350/390 (89%, 28 wrong)
+     *   vs 341/390 (87%, 30 wrong) at v1.2.2.
+     * - Confirmed on a second seed set (fresh templates and draws):
+     *   LIVE 350/390 single and 327/390 multi vs 345/390 and
+     *   322/390 at v1.2.2, wrong launches 17 single and 40 multi
+     *   vs 16 and 40; the one cost on those seeds is a single
+     *   clean VARIATIONS no-match (389/390, no wrong launch).
+     *
      * A gesture below threshold shows no match, never a wrong launch.
      */
     const val RESAMPLE_COUNT = 96
@@ -170,7 +220,7 @@ object Recognizer {
     private const val HALF_DIAGONAL = 0.5f * 353.55f // 0.5 * sqrt(250^2 + 250^2)
     private const val MAX_PERMUTED_STROKES = 4
     private const val STROKE_COUNT_PENALTY = 0.12f
-    private const val ORIENTATION_PENALTY_MAX = 0.20f
+    private const val ORIENTATION_PENALTY_MAX = 0.28f
     private const val ORIENTATION_FREE_DEGREES = 20f
     private const val ORIENTATION_FULL_DEGREES = 40f
     private const val MIN_GESTURE_SIZE_PX = 30f
@@ -181,7 +231,7 @@ object Recognizer {
      * returns no match. What keeps wrong launches at zero now that
      * DTW is in play.
      */
-    private const val MARGIN = 0.03f
+    private const val MARGIN = 0.025f
     /** Sakoe-Chiba band for the DTW alignment, in points. */
     private const val DTW_BAND = 10
     /**
