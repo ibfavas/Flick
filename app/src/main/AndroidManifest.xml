@@ -50,9 +50,13 @@
             android:name=".CrashActivity"
             android:exported="false" />
 
+        <!-- Invisible widget (2x1): a fully transparent tap area that
+             opens the drawing pad. Labelled "Flick (Invisible)" in the
+             picker so it can be found even though nothing shows. -->
         <receiver
             android:name=".widget.FlickWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/widget_invisible_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -74,7 +78,7 @@
                 android:resource="@xml/flick_round_widget_info" />
         </receiver>
 
-        <!-- Wide widget (2x1): the flick wordmark on black. -->
+        <!-- Wide widget (3x1): the flick wordmark on black. -->
         <receiver
             android:name=".widget.FlickWideWidgetProvider"
             android:exported="true"

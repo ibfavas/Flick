@@ -6,6 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import com.ibfavas.flick.data.DatabaseProvider
 import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.ui.FlickTheme
@@ -34,7 +37,12 @@ class MainActivity : ComponentActivity() {
             val settings = SettingsStore(this)
             val openSettings = intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false)
             setContent {
-                FlickTheme {
+                // The app accent (v1.2.0) is a setting: read it here so
+                // a change in Settings recolours the whole app at once.
+                val accentArgb by settings.accentColor.collectAsState(
+                    initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
+                )
+                FlickTheme(accent = Color(accentArgb)) {
                     MainScreen(dao = dao, settings = settings, openSettings = openSettings)
                 }
             }

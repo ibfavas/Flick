@@ -73,6 +73,7 @@ import com.ibfavas.flick.ui.ActionIcon
 import com.ibfavas.flick.ui.DrawPad
 import com.ibfavas.flick.ui.FlickBrand
 import com.ibfavas.flick.ui.FlickTheme
+import com.ibfavas.flick.ui.accentColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,7 +122,12 @@ class DrawActivity : ComponentActivity() {
         val settings = SettingsStore(this)
 
         setContent {
-            FlickTheme {
+            // The app accent (v1.2.0) is a setting: read it here so
+            // a change in Settings recolours the pad at once.
+            val accentArgb by settings.accentColor.collectAsState(
+                initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
+            )
+            FlickTheme(accent = Color(accentArgb)) {
                 DrawScreen(
                     dao = dao,
                     settings = settings,
@@ -173,6 +179,9 @@ private fun DrawScreen(
     val strokeColorArgb by settings.strokeColor.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
+    // The pad wave follows the app accent (v1.2.0), read here
+    // because the Canvas draw scope below is not composable.
+    val accent = accentColor()
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
     )
@@ -346,7 +355,7 @@ private fun DrawScreen(
                         brush = Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                FlickBrand.Cyan.copy(alpha = 0.30f),
+                                accent.copy(alpha = 0.30f),
                                 Color.Transparent
                             ),
                             startY = y,

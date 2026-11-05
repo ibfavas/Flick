@@ -10,7 +10,7 @@ import com.ibfavas.flick.DrawActivity
 import com.ibfavas.flick.R
 
 /**
- * The wide widget (2x1): the flick wordmark — rounded lowercase white
+ * The wide widget (3x1): the flick wordmark — rounded lowercase white
  * letters with a cyan dot on the i — on a pitch-black background. The
  * whole widget is the button: tapping it opens the drawing pad. The
  * request code is offset so its PendingIntent can never collide with

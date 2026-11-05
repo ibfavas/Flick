@@ -33,6 +33,7 @@ class SettingsStore(private val context: Context) {
         private val SOUND_ON_RUN = booleanPreferencesKey("sound_on_run")
         private val STROKE_WIDTH = floatPreferencesKey("stroke_width_px")
         private val STROKE_COLOR = intPreferencesKey("stroke_color_argb")
+        private val ACCENT_COLOR = intPreferencesKey("accent_color_argb")
 
         /** Background blur behind the pad, in px (Android 12 and up). */
         const val DEFAULT_BLUR_PX: Int = 25
@@ -68,6 +69,25 @@ class SettingsStore(private val context: Context) {
             0xFF00E5FF, 0xFFFFFFFF, 0xFFFFEB3B,
             0xFF69F0AE, 0xFFFF80AB, 0xFFFFAB40
         ).map { it.toInt() }
+
+        /**
+         * App accent colour (v1.2.0): the colour of buttons,
+         * selections, highlights, the Save pill and gesture glyphs,
+         * app-wide. Cyan by default. Every preset is light enough
+         * for black text on top. This is separate from the stroke
+         * colour above, which colours only the stroke you draw.
+         */
+        const val DEFAULT_ACCENT_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
+
+        /** Accent colour presets offered in Settings, as ARGB ints. */
+        val ACCENT_COLOR_PRESETS: List<Int> = listOf(
+            0xFF00E5FF, // Cyan
+            0xFF69F0AE, // Green
+            0xFFFFAB40, // Amber
+            0xFFB388FF, // Purple
+            0xFFFF80AB, // Pink
+            0xFF448AFF  // Blue
+        ).map { it.toInt() }
     }
 
     val overlayBlur: Flow<Int> = context.dataStore.data.map { it[OVERLAY_BLUR] ?: DEFAULT_BLUR_PX }
@@ -77,6 +97,7 @@ class SettingsStore(private val context: Context) {
     val soundOnRun: Flow<Boolean> = context.dataStore.data.map { it[SOUND_ON_RUN] ?: DEFAULT_SOUND_ON_RUN }
     val strokeWidth: Flow<Float> = context.dataStore.data.map { it[STROKE_WIDTH] ?: DEFAULT_STROKE_WIDTH_PX }
     val strokeColor: Flow<Int> = context.dataStore.data.map { it[STROKE_COLOR] ?: DEFAULT_STROKE_COLOR_ARGB }
+    val accentColor: Flow<Int> = context.dataStore.data.map { it[ACCENT_COLOR] ?: DEFAULT_ACCENT_COLOR_ARGB }
 
     suspend fun setOverlayBlur(px: Int) {
         context.dataStore.edit { it[OVERLAY_BLUR] = px.coerceIn(0, MAX_BLUR_PX) }
@@ -106,5 +127,9 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setStrokeColor(argb: Int) {
         context.dataStore.edit { it[STROKE_COLOR] = argb }
+    }
+
+    suspend fun setAccentColor(argb: Int) {
+        context.dataStore.edit { it[ACCENT_COLOR] = argb }
     }
 }

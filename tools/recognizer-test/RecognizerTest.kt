@@ -20,6 +20,16 @@ import kotlin.random.Random
  *   v1.0.8 behaviour: the recognizer matches against every sample and
  *   takes the best score). Multi-sample should lift correct-match
  *   scores, so the threshold can sit higher and false matches drop.
+ *
+ * Each of SINGLE and MULTI also runs TILT, SLOPPY, REV and LIVE:
+ * - TILT: clean shapes rotated ±10-25 degrees.
+ * - SLOPPY: finger-drawn copies (non-uniform spacing, hooks, wobble,
+ *   noise, half drawn backwards).
+ * - REV: clean shapes drawn fully backwards.
+ * - LIVE (v1.2.0): a later live draw versus the saved template —
+ *   combined scale/rotation/translation, wobble, non-uniform point
+ *   density, and partial strokes (see LiveGen.kt). The suite that
+ *   motivated the v1.2.0 open-ended-DTW rescue pass.
  */
 
 private val KNOWN = listOf("circle", "square", "triangle", "check", "v", "line", "l", "star", "q", "x", "s", "c", "z")
@@ -173,6 +183,38 @@ private fun runRevSuite(label: String, templates: List<Recognizer.MultiTemplate>
     println("$label REV: total=$total correct=$correct (${100 * correct / total}%) wrong=$wrong no-match=$noMatch")
 }
 
+/**
+ * LIVE suite (v1.2.0): each shape drawn 30 times with the live-draw
+ * transforms in LiveGen — a later draw of the same gesture versus the
+ * saved template, with combined scale/rotation/translation, wobble,
+ * non-uniform point density and truncated strokes. This is the gap the
+ * v1.1.0 work did not cover: the saved template and the live draw are
+ * never identical, and truncation in particular cannot be normalised
+ * away by resampling.
+ */
+private fun runLiveSuite(label: String, templates: List<Recognizer.MultiTemplate>) {
+    val rnd = Random(20261105)
+    var correct = 0; var wrong = 0; var noMatch = 0; var total = 0
+    val perShape = mutableMapOf<String, Int>()
+    for (name in KNOWN) {
+        var ok = 0
+        repeat(30) {
+            val clean = ShapeGen.shapePoints(name, rnd, 1f, 0f, 0f, 0f, 64)
+            val strokes = live(clean, rnd)
+            val match = Recognizer.recognizeMulti(strokes, templates)
+            total++
+            when {
+                match == null -> noMatch++
+                match.template.name == name -> { correct++; ok++ }
+                else -> wrong++
+            }
+        }
+        perShape[name] = ok
+    }
+    println("$label LIVE: total=$total correct=$correct (${100 * correct / total}%) wrong=$wrong no-match=$noMatch")
+    println("$label live per-shape correct/30: " + KNOWN.joinToString(" ") { "$it=${perShape[it]}" })
+}
+
 fun main() {
     val cleanRnd = Random(42)
     val single = KNOWN.map { name ->
@@ -182,6 +224,7 @@ fun main() {
     runTiltSuite("SINGLE", single)
     runSloppySuite("SINGLE", single)
     runRevSuite("SINGLE", single)
+    runLiveSuite("SINGLE", single)
 
     // Three samples per gesture: the clean template plus two varied
     // copies, as a user recording extra samples would produce.
@@ -203,4 +246,5 @@ fun main() {
     runTiltSuite("MULTI", multi)
     runSloppySuite("MULTI", multi)
     runRevSuite("MULTI", multi)
+    runLiveSuite("MULTI", multi)
 }

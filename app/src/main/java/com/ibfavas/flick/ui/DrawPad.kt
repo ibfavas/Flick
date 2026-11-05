@@ -315,7 +315,7 @@ fun DrawPad(
                         RoundedCornerShape(20.dp)
                     )
                 ) {
-                    Text("Done", color = FlickBrand.Cyan)
+                    Text("Done", color = accentColor())
                 }
                 TextButton(
                     onClick = { clearAll() },

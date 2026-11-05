@@ -90,6 +90,78 @@ object Recognizer {
      *   adversarial unknowns (MULTI unchanged at 4/100); a wider
      *   margin (0.05) was tried and rejected — it cost 15-21 sloppy
      *   matches and 2 tilted ones without reducing false matches.
+     *
+     * v1.2.0 changes, each measured in tools/recognizer-test
+     * (LIVE suite in RecognizerTest/LiveGen, sweep2.sh rounds):
+     * - LIVE suite: a later live draw versus the saved template —
+     *   combined scale (±20%), translation, rotation (±10°),
+     *   lateral wobble, non-uniform point density (a faster later
+     *   draw is sparser), and partial strokes (the final stroke ends
+     *   10-20% short by path length, and half the time one other
+     *   stroke of a multi-stroke gesture loses 10-15%). Ablation
+     *   against the v1.1.0 recognizer showed truncation is the
+     *   killer: truncation alone cost 129 of 390 draws, while
+     *   density, wobble and geometry alone each cost 0-1.
+     *   Resampling a truncated path stretches it to 96
+     *   points, so the candidate's points drift against the
+     *   template's along the whole tail, and the banded DTW's
+     *   forced endpoint alignment cannot skip the template's tail.
+     * - Two-pass matching: pass 1 is exactly the v1.1.0 scorer.
+     *   Pass 2 runs only when pass 1 finds no match, and re-scores
+     *   with an open-ended DTW that may skip up to 24 template
+     *   points at either end (end-skip for the as-drawn form,
+     *   start-skip for the reversed form) at 10 px per skipped
+     *   point, inside a band of 28. The skip is bounded and
+     *   penalised, and the margin rule still applies in pass 2, so
+     *   a short shape cannot silently become a longer one.
+     * - Rejected: scoring everything with the open DTW in a single
+     *   pass (LIVE rose to the same level, but it also lifts
+     *   near-miss templates, compressing margins: SINGLE SLOPPY
+     *   fell to 364-381/390 and TILT to 102/104 depending on the
+     *   skip penalty); a pass-2 override rule (let the open DTW
+     *   overturn a pass 1 match it strongly disagreed with — it
+     *   never fired at any margin, because whenever pass 1 matches
+     *   the open DTW agrees on the winner; the single-pass gain on
+     *   wrong launches came from margin kills, not from the true
+     *   template winning); a lower threshold (0.85: false matches
+     *   rose to 3/100 single and 5/100 multi with no LIVE gain);
+     *   margin 0.02 and 0.05 (0.02 raised LIVE wrong launches,
+     *   0.05 cost 23-27 sloppy matches); resample 64 and 128
+     *   (within noise of 96); skip penalties 0-80 (0 and 5 match
+     *   10 within a few draws; 15 loses LIVE matches, and 60/80
+     *   in the single-pass rounds lost most of the gain).
+     *
+     * v1.2.0 measured results (seeded harness; same suites, same
+     * seeds, run against this file; LIVE baseline is the v1.1.0
+     * recognizer on the same LIVE suite):
+     * - SINGLE: 390/390 correct (100%), 2/100 false (2%), TILT
+     *   104/104 (100%), SLOPPY 384/390 (98%, 0 wrong), REV 390/390
+     *   (100%, 0 wrong), LIVE 342/390 (87%, 22 wrong) vs 241/390
+     *   (61%, 22 wrong) baseline.
+     * - MULTI (3 samples): 390/390 correct (100%), 4/100 false
+     *   (4%), TILT 104/104 (100%), SLOPPY 387/390 (99%, 0 wrong),
+     *   REV 390/390 (100%, 0 wrong), LIVE 341/390 (87%, 30 wrong)
+     *   vs 252/390 (64%, 30 wrong) baseline.
+     * - Every non-LIVE number is identical to v1.1.0: the two-pass
+     *   design rescues only no-matches, so nothing that matched
+     *   before can change. The LIVE gain was confirmed on a second
+     *   seed set (fresh templates and draws): v1.1.0 LIVE 256/390
+     *   both, v1.2.0 LIVE 349/390 single and 340/390 multi, with
+     *   wrong launches unchanged (15 single, 30 multi) and false
+     *   matches 3/100 single and 6/100 multi on those seeds for
+     *   both versions (the fresh-seed false rate is seed variance
+     *   in the unknown draws, not a rescue effect).
+     * - Honest limits: the rescue converts no-matches into matches;
+     *   it does not fix pass 1's wrong launches. A truncated circle
+     *   is a 'c' by shape (a 306-degree arc either way) and a
+     *   truncated check resembles a 'v', so those stay wrong in
+     *   LIVE (circle 11/30 single, check 22/30 single) while the
+     *   margin rule keeps them from spreading. On the fresh-seed
+     *   run MULTI LIVE (87%) trailed SINGLE (89-91%): the extra
+     *   samples add confusable near-neighbours for truncated draws.
+     *   All of this is measured on synthetic shapes in the harness,
+     *   not on a real device: whether a finger lifts early by
+     *   10-20% as often as the suite assumes is unmeasured.
      * A gesture below threshold shows no match, never a wrong launch.
      */
     const val RESAMPLE_COUNT = 96
@@ -112,6 +184,21 @@ object Recognizer {
     private const val MARGIN = 0.03f
     /** Sakoe-Chiba band for the DTW alignment, in points. */
     private const val DTW_BAND = 10
+    /**
+     * Open-ended DTW (v1.2.0): how many template points the alignment
+     * may skip at either end, in points. A live draw that ends early
+     * covers only a prefix of the template (or, in the reversed form,
+     * only a suffix); the skip lets the alignment end there instead of
+     * forcing the candidate's last points onto the template's tail.
+     * 24 of 96 points is a 25% truncation allowance.
+     */
+    private const val DTW_MAX_SKIP = 24
+    /** Cost, in normalised px, of each template point skipped by the open DTW. */
+    private const val DTW_SKIP_PENALTY = 10f
+    /** Sakoe-Chiba band for the open-ended DTW, in points. Wider than
+     * [DTW_BAND]: a truncated candidate drifts from the diagonal by up
+     * to the skipped fraction, about 19 points at 20% truncation. */
+    private const val DTW_OPEN_BAND = 28
 
     data class Template(val name: String, val points: List<StrokePoint>)
 
@@ -250,6 +337,23 @@ object Recognizer {
      * gesture by [MARGIN], or the match is ambiguous and returns
      * null. [Match.source] carries the template that won, so the
      * caller can find the gesture without relying on its name.
+     *
+     * v1.2.0: two passes. Pass 1 is exactly the v1.1.0 scorer above,
+     * so every draw that matched before still matches the same way.
+     * Pass 2 runs only when pass 1 finds no match, and re-scores
+     * with the open-ended DTW, which tolerates a draw that ends
+     * early (a truncated stroke). The rescue pass exists because the
+     * open DTW also lifts near-miss templates, which compresses
+     * margins: scoring everything with it in a single pass cost
+     * 4-20 sloppy and tilted matches in the harness. As a rescue it
+     * can only turn a no-match into a match, never change a match
+     * that pass 1 made. An override rule (let pass 2 overturn a
+     * pass 1 match when it strongly disagreed) was tried and
+     * removed: it never fired at any margin, because whenever pass
+     * 1 matches, the open DTW agrees with it on the winner — the
+     * single-pass gain on wrong launches came from margin kills,
+     * not from the true template winning, and those kills are what
+     * cost the sloppy matches.
      */
     fun recognizeMultiPrepared(
         rawStrokes: List<List<StrokePoint>>,
@@ -259,6 +363,21 @@ object Recognizer {
         val usable = rawStrokes.filter { it.size >= 2 }
         if (usable.isEmpty() || prepared.isEmpty()) return null
         if (!isBigEnough(usable)) return null
+        return matchPrepared(usable, prepared, threshold, openDtw = false)
+            ?: matchPrepared(usable, prepared, threshold, openDtw = true)
+    }
+
+    /**
+     * One scoring pass over the prepared templates. With
+     * [openDtw] false this is the v1.1.0 scorer (banded DTW); with
+     * true it is the v1.2.0 rescue scorer (open-ended DTW).
+     */
+    private fun matchPrepared(
+        usable: List<List<StrokePoint>>,
+        prepared: List<PreparedTemplate>,
+        threshold: Float,
+        openDtw: Boolean
+    ): Match? {
         // Candidate forms: as drawn, and fully reversed. A reversed
         // form is the same gesture drawn backwards.
         val forms = listOf(false to usable, true to reversedStrokes(usable))
@@ -278,7 +397,7 @@ object Recognizer {
                     if (template.strokeCount != usable.size) STROKE_COUNT_PENALTY else 0f
                 for (variant in template.variants) {
                     var s = score(variant.points, candidate) - countPenalty
-                    s = maxOf(s, dtwScore(variant.points, candidate) - countPenalty)
+                    s = maxOf(s, dtwScore(variant.points, candidate, openDtw) - countPenalty)
                     if (candidateOpen && variant.open) {
                         var diff = angleDifference(candidateAngle, variant.angle)
                         // A line has no direction: for the reversed
@@ -333,12 +452,16 @@ object Recognizer {
 
     /**
      * Banded dynamic time warping between two normalized 96-point
-     * sequences. Unlike the $N pointwise distance, DTW lets the
-     * alignment stretch locally, which is what a finger does: fast
-     * stretches come out sparse, slow stretches dense, and the shape
-     * is the same. The band keeps the cost near-linear.
+     * sequences (v1.1.0, kept as the first-pass scorer in v1.2.0).
+     * Unlike the $N pointwise distance, DTW lets the alignment
+     * stretch locally, which is what a finger does: fast stretches
+     * come out sparse, slow stretches dense, and the shape is the
+     * same. The band keeps the cost near-linear, and the forced
+     * endpoint-to-endpoint alignment is exactly right for a complete
+     * draw. A truncated draw is rescued by the open-ended DTW below,
+     * in a second pass that only runs when this one finds no match.
      */
-    private fun dtwDistance(a: List<StrokePoint>, b: List<StrokePoint>): Float {
+    private fun dtwBandedDistance(a: List<StrokePoint>, b: List<StrokePoint>): Float {
         val n = a.size
         val m = b.size
         val inf = Float.MAX_VALUE / 4
@@ -360,9 +483,56 @@ object Recognizer {
         return prev[m]
     }
 
+    /**
+     * Open-ended dynamic time warping between two normalized 96-point
+     * sequences (v1.2.0 second pass). Unlike the banded DTW above it
+     * lets the alignment skip template points at either end, at
+     * [DTW_SKIP_PENALTY] per point: a live draw that ends early
+     * covers only a prefix of the template (in the reversed form, only
+     * a suffix), and forcing its last points onto the template's tail
+     * was what truncation punished. The skip is bounded
+     * ([DTW_MAX_SKIP] points per end) and penalised, so a short shape
+     * cannot silently become a longer one: a 'c' still has to beat a
+     * circle on its own merits, and the margin rule still applies.
+     * Rows are the candidate, columns the template; the final row
+     * holds the cost of aligning the whole candidate with every
+     * template prefix, so the best end position is a minimum over
+     * that row plus the suffix-skip penalty.
+     */
+    private fun dtwOpenDistance(a: List<StrokePoint>, b: List<StrokePoint>): Float {
+        val n = a.size // template points (columns)
+        val m = b.size // candidate points (rows)
+        val inf = Float.MAX_VALUE / 4
+        var prev = FloatArray(n + 1) { inf }
+        var cur = FloatArray(n + 1) { inf }
+        // Row 0: aligning zero candidate points with a template
+        // prefix of length c means skipping those c template points.
+        for (c in 0..minOf(n, DTW_MAX_SKIP)) prev[c] = DTW_SKIP_PENALTY * c
+        for (r in 1..m) {
+            cur[0] = inf
+            val lo = maxOf(1, r - DTW_OPEN_BAND)
+            val hi = minOf(n, r + DTW_OPEN_BAND)
+            for (c in lo..hi) {
+                val cost = distance(a[c - 1], b[r - 1])
+                cur[c] = cost + minOf(prev[c], cur[c - 1], prev[c - 1])
+            }
+            val tmp = prev
+            prev = cur
+            cur = tmp
+        }
+        // Best end position: align the whole candidate with a template
+        // prefix ending at c, skipping the remaining n - c points.
+        var best = inf
+        for (c in maxOf(0, n - DTW_MAX_SKIP)..n) {
+            val total = prev[c] + DTW_SKIP_PENALTY * (n - c)
+            if (total < best) best = total
+        }
+        return best
+    }
+
     /** DTW distance as a 0..1 score, on the same scale as [score]. */
-    private fun dtwScore(a: List<StrokePoint>, b: List<StrokePoint>): Float {
-        val d = dtwDistance(a, b)
+    private fun dtwScore(a: List<StrokePoint>, b: List<StrokePoint>, open: Boolean = false): Float {
+        val d = if (open) dtwOpenDistance(a, b) else dtwBandedDistance(a, b)
         return (1f - (d / a.size) / HALF_DIAGONAL).coerceIn(0f, 1f)
     }
 

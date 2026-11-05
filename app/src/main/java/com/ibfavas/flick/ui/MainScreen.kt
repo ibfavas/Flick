@@ -110,9 +110,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -631,7 +634,7 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(
-                if (selected) FlickBrand.Cyan else MaterialTheme.colorScheme.surfaceVariant
+                if (selected) accentColor() else MaterialTheme.colorScheme.surfaceVariant
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 10.dp),
@@ -877,6 +880,9 @@ private fun GestureDetailSheet(
 @Composable
 private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     val strokes = remember(template) { Recognizer.strokesFromString(template) }
+    // Glyphs follow the app accent (v1.2.0), read here because the
+    // Canvas draw scope below is not a composable scope.
+    val accent = accentColor()
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -915,10 +921,40 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
                         lineTo(stroke[i].x * scale + ox, stroke[i].y * scale + oy)
                     }
                 }
-                drawPath(path, FlickBrand.Cyan, style = style)
+                drawPath(path, accent, style = style)
             }
         }
     }
+}
+
+/**
+ * An empty sample slot (v1.2.0): a thin dashed-outline box the same
+ * size as a filled sample glyph, showing where the next sample goes.
+ */
+@Composable
+private fun SampleSlotPlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.drawBehind {
+            val path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        0f, 0f, size.width, size.height,
+                        14.dp.toPx(), 14.dp.toPx()
+                    )
+                )
+            }
+            drawPath(
+                path,
+                FlickBrand.Outline,
+                style = Stroke(
+                    width = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(
+                        floatArrayOf(8.dp.toPx(), 6.dp.toPx()), 0f
+                    )
+                )
+            )
+        }
+    )
 }
 
 private fun gestureDescription(gesture: Gesture, appLabel: String? = null): String {
@@ -947,6 +983,10 @@ private fun EditGestureDialog(
     onSave: (String, ActionType, String) -> Unit
 ) {
     var name by remember { mutableStateOf(gesture.name) }
+    // Same auto-fill rule as the record form (v1.2.0): an app pick
+    // fills the name only while it is blank or holds a previous
+    // auto-fill, never over a name the user typed.
+    var nameAutoFilled by remember { mutableStateOf(false) }
     var action by remember { mutableStateOf(ActionSelection(gesture.actionType, gesture.payload)) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -955,12 +995,24 @@ private fun EditGestureDialog(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = {
+                        name = it
+                        nameAutoFilled = false
+                    },
                     label = { Text("Name") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                ActionPicker(action = action, onChange = { action = it })
+                ActionPicker(
+                    action = action,
+                    onChange = { action = it },
+                    onAppPicked = { label ->
+                        if (name.isBlank() || nameAutoFilled) {
+                            name = label
+                            nameAutoFilled = true
+                        }
+                    }
+                )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     "Samples: $sampleCount of ${Gesture.MAX_SAMPLES}",
@@ -1150,6 +1202,7 @@ private fun DrawGestureScreen(
 /** A small hand-drawn squiggle, the "Draw here" hint glyph. */
 @Composable
 private fun SquiggleIcon(modifier: Modifier = Modifier) {
+    val accent = accentColor()
     Canvas(modifier = modifier) {
         val style = Stroke(
             width = 3.dp.toPx(),
@@ -1169,7 +1222,7 @@ private fun SquiggleIcon(modifier: Modifier = Modifier) {
                 size.width * 0.95f, size.height * 0.4f
             )
         }
-        drawPath(path, FlickBrand.Cyan.copy(alpha = 0.7f), style = style)
+        drawPath(path, accent.copy(alpha = 0.7f), style = style)
     }
 }
 
@@ -1196,6 +1249,10 @@ private fun RecordScreen(
     // only links, Flows only flows.
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
+    // True when the name came from an app pick (v1.2.0): a later app
+    // pick refills it, but a name the user typed by hand is never
+    // overwritten. Editing the field by hand clears the flag.
+    var nameAutoFilled by remember { mutableStateOf(false) }
     var action by remember {
         mutableStateOf(
             ActionSelection(
@@ -1226,10 +1283,17 @@ private fun RecordScreen(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
+            // The name field is a squircle box (v1.2.0) and sits
+            // above the sample boxes. Its text is filled in from
+            // the app the user picks, and stays editable after.
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = {
+                    name = it
+                    nameAutoFilled = false
+                },
                 label = { Text("Gesture name") },
+                shape = SquircleShape,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1240,12 +1304,21 @@ private fun RecordScreen(
                 color = FlickBrand.TextWhite
             )
             Spacer(modifier = Modifier.height(8.dp))
+            // v1.2.0: no big preview box at the top — these three
+            // small boxes ARE the gesture display. Box 1 holds the
+            // first sample; empty slots are dashed placeholders, and
+            // adding a sample fills the next empty box. Max 3, as
+            // before (main template + two extras).
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                initialSamples.forEach { sample ->
-                    GestureGlyph(
-                        template = Recognizer.strokesToString(sample),
-                        modifier = Modifier.size(96.dp)
-                    )
+                for (i in 0 until Gesture.MAX_SAMPLES) {
+                    if (i < initialSamples.size) {
+                        GestureGlyph(
+                            template = Recognizer.strokesToString(initialSamples[i]),
+                            modifier = Modifier.size(96.dp)
+                        )
+                    } else {
+                        SampleSlotPlaceholder(modifier = Modifier.size(96.dp))
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -1265,10 +1338,7 @@ private fun RecordScreen(
                         onClick = onAddSample,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(
-                            "Add another sample " +
-                                "(${initialSamples.size + 1} of ${Gesture.MAX_SAMPLES})"
-                        )
+                        Text("Add sample")
                     }
                 }
             }
@@ -1290,7 +1360,15 @@ private fun RecordScreen(
             ActionPicker(
                 action = action,
                 onChange = { action = it },
-                filter = initialCategory
+                filter = initialCategory,
+                // Picking an app fills the name from the app's label
+                // (v1.2.0), unless the user already typed a name.
+                onAppPicked = { label ->
+                    if (name.isBlank() || nameAutoFilled) {
+                        name = label
+                        nameAutoFilled = true
+                    }
+                }
             )
         }
         item {
@@ -1455,7 +1533,11 @@ private fun ActionPicker(
     action: ActionSelection,
     onChange: (ActionSelection) -> Unit,
     allowFlow: Boolean = true,
-    filter: GestureCategory? = null
+    filter: GestureCategory? = null,
+    // Called with the picked app's label (v1.2.0): the record form
+    // fills the gesture name from it. Null where no name field
+    // exists (flow steps), so picking there changes nothing.
+    onAppPicked: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1684,6 +1766,7 @@ private fun ActionPicker(
             onPick = { label, packageName ->
                 pickedAppLabel = label
                 onChange(ActionSelection(ActionType.LAUNCH_APP, packageName))
+                onAppPicked?.invoke(label)
                 showAppPicker = false
             }
         )
@@ -2238,6 +2321,9 @@ private fun SettingsScreen(
     val strokeColorArgb by settings.strokeColor.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
+    val accentColorArgb by settings.accentColor.collectAsState(
+        initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
+    )
     // Backup result, shown under the buttons until the next backup action.
     var backupMessage by remember { mutableStateOf<String?>(null) }
     // Backup export: the user picks where the JSON file goes.
@@ -2441,7 +2527,34 @@ private fun SettingsScreen(
                     }
                 }
                 Text(
-                    "The colour of the stroke you draw. Gesture cards in the list always stay cyan.",
+                    "The colour of the stroke you draw. Gesture cards in the list follow the app colour below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        item {
+            // App colour (v1.2.0): the accent used across the app —
+            // buttons, selections, highlights, the Save pill and
+            // gesture glyphs. The stroke colour above stays separate.
+            SettingsSection(title = "App colour") {
+                Text(
+                    "Accent colour",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = FlickBrand.TextWhite
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsStore.ACCENT_COLOR_PRESETS.forEach { argb ->
+                        StrokeSwatch(
+                            color = Color(argb),
+                            selected = argb == accentColorArgb,
+                            onClick = { scope.launch { settings.setAccentColor(argb) } },
+                            ringColor = FlickBrand.TextWhite
+                        )
+                    }
+                }
+                Text(
+                    "Buttons, selections, highlights and gesture glyphs use this colour across the app. The stroke colour stays separate.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2666,9 +2779,19 @@ private fun SettingSwitch(
     }
 }
 
-/** One stroke colour swatch: a filled circle, ringed in cyan when selected. */
+/**
+ * One colour swatch: a filled circle, ringed when selected. The ring
+ * is the app accent by default; the accent picker itself passes white,
+ * so the ring reads on whichever accent is selected.
+ */
 @Composable
-private fun StrokeSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
+private fun StrokeSwatch(
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    ringColor: Color? = null
+) {
+    val ring = ringColor ?: accentColor()
     Box(
         modifier = Modifier
             .size(40.dp)
@@ -2676,7 +2799,7 @@ private fun StrokeSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
             .background(color)
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) FlickBrand.Cyan else FlickBrand.Outline,
+                color = if (selected) ring else FlickBrand.Outline,
                 shape = CircleShape
             )
             .clickable(onClick = onClick)
