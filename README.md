@@ -9,64 +9,69 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.2-00E5FF" alt="Version 1.2.2">
+  <img src="https://img.shields.io/badge/version-1.3.0-00E5FF" alt="Version 1.3.0">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
 </p>
 
-## ⬇️ Download
+## Download
 
-Get the latest release here:
+<p align="center">
+  <a href="https://github.com/ibfavas/Flick/releases/download/v1.3.0/flick-1.3.0.apk">
+    <img src="assets/download-button.png" alt="Download flick-1.3.0.apk" width="320">
+  </a>
+</p>
 
-**[📥 flick-1.2.2.apk](https://github.com/ibfavas/Flick/releases/download/v1.2.2/flick-1.2.2.apk)**
+<p align="center">
+  <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
+</p>
 
-Or see all releases on the
-[releases page](https://github.com/ibfavas/Flick/releases).
+## What is new in 1.3.0
 
-## ✨ Features
+Recognition got better. On the built in test harness, live style draws
+went from 87% to 89% detected, and wrong launches did not go up.
 
-- **🎨 Gesture pad** — draw a gesture on a full-screen canvas. Flick
-  recognises it with a from-scratch matcher (multi-stroke $N recognizer
-  blended with banded DTW, direction handling, and a rescue pass for
-  truncated draws), so sloppy, tilted, and reversed strokes still match,
-  and near-misses don't launch the wrong thing. Draw a circle, lift, and
-  draw a line to make a Q: multi-stroke gestures work, and single-stroke
-  gestures work exactly as before. No ML model, no dependency.
-- **📚 Gesture library** — record gestures, give them names, attach
+## Features
+
+- **Gesture pad:** draw a gesture on a full screen canvas. Flick
+  recognises it with a matcher written from scratch (a multi-stroke $N
+  recognizer blended with banded DTW, direction handling, and a rescue
+  pass for draws cut short). Sloppy, tilted, and reversed strokes still
+  match, and near misses do not launch the wrong thing. Draw a circle,
+  lift, and draw a line to make a Q. Multi-stroke gestures work, and
+  single-stroke gestures work exactly as before. No ML model, no
+  dependency.
+- **Gesture library:** record gestures, give them names, attach
   actions, edit, delete, enable or disable, and test them from the draw
   pad. Up to 3 samples per gesture, with a confidence readout while
-  testing; add extra samples straight from the gesture sheet. Stored
-  locally in a SQLite database on the phone. Backup and restore your
-  gestures as JSON.
-- **⚡ Actions** — launch an app, open a URL or deep link, call a
+  testing. Add extra samples straight from the gesture sheet. Everything
+  is stored locally in a SQLite database on the phone. Backup and restore
+  your gestures as JSON.
+- **Actions:** launch an app, open a URL or deep link, call a
   contact, lock the screen, take a screenshot, toggle flashlight,
-  open the camera, play/pause media, open Wi-Fi or Bluetooth settings,
+  open the camera, play or pause media, open Wi-Fi or Bluetooth settings,
   and toggle Do Not Disturb.
-- **🔗 Flows** — chain several actions into one gesture, run step by step.
-- **👻 Invisible widget** — a fully transparent home-screen widget. Tap
-  it and a transparent gesture pad opens; draw, and the matched action
+- **Flows:** chain several actions into one gesture, run step by step.
+- **Invisible widget:** a fully transparent home screen widget. Tap
+  it and a transparent gesture pad opens. Draw, and the matched action
   runs. Round and wide widget styles are available too.
-- **⚙️ Quick Settings tile** — the Flick tile opens the same gesture pad
+- **Quick Settings tile:** the Flick tile opens the same gesture pad
   from anywhere.
-- **🎨 Themes** — AMOLED black theme with your choice of accent colour:
+- **Themes:** AMOLED black theme with your choice of accent colour:
   Cyan, Green, Amber, Purple, Pink, or Blue. Stroke colour and width are
   adjustable too.
 
-<details>
-<summary><b>👻 How the invisible widget works</b></summary>
+## How the invisible widget works
 
 Android widgets only support taps, not stroke tracking: a widget cannot
-receive finger-movement data. So the widget itself is just a transparent
-tap target. Tapping it launches a transparent full-screen activity, and
+receive finger movement data. So the widget itself is just a transparent
+tap target. Tapping it launches a transparent full screen activity, and
 the drawing happens there. In daily use it feels like drawing on the home
 screen, but the drawing technically happens in that transparent activity,
 not inside the widget.
 
-</details>
-
-<details>
-<summary><b>🛠️ Build</b></summary>
+## Build
 
 Requirements: JDK 17 and the Android SDK (platform-tools,
 `platforms;android-35`, `build-tools;35.0.0`).
@@ -91,15 +96,13 @@ A daemon-free manual build is also available via
 `tools/build-manual.sh` (kotlinc CLI + aapt2 + d8 + apksigner), which
 produces a signed release APK at `build/flick-release.apk`.
 
-</details>
-
-## 🎨 Originality
+## Originality
 
 Flick is 100% original code written for this project. It shares a concept
 with other gesture launchers (draw to launch) but copies no code, assets,
 branding, or resources from any other app.
 
-## 📄 License
+## License
 
 Flick is licensed under the Apache License 2.0. See [LICENSE](LICENSE)
 for the full text.
