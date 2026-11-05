@@ -1,0 +1,97 @@
+# Flick
+
+Draw a gesture to launch apps, links, and phone actions. Flick is a fully
+local Android app: no backend, no accounts, no data leaves the phone.
+
+## Features
+
+- **Gesture pad** — draw a stroke on a full-screen canvas. Flick recognises
+  it with a from-scratch implementation of the $1 Unistroke Recognizer
+  (resample to 64 points, rotate to the indicative angle, scale, translate,
+  path-distance scoring). No ML model, no dependency.
+- **Gesture library** — record gestures, give them names, attach actions,
+  edit, delete, and test them from the Test pad tab. Stored locally in a
+  SQLite database on the phone (see the note in `data/Gesture.kt`: v1.0.0
+  was built without Gradle, so Room's annotation processing was replaced
+  with a plain SQLiteOpenHelper holding the same table and API).
+- **Actions** — launch an app, open a URL or deep link, flashlight on/off,
+  open the camera, media play/pause.
+- **Invisible widget** — a fully transparent home-screen widget. Tap it and
+  a transparent gesture pad opens; draw, and the matched action runs.
+- **Quick Settings tile** — the Flick tile opens the same gesture pad from
+  anywhere.
+- **Settings** — stroke colour and width, stored in DataStore Preferences.
+
+## How the invisible widget works
+
+Android widgets only support taps, not stroke tracking: a widget cannot
+receive finger-movement data. So the widget itself is just a transparent
+tap target. Tapping it launches a transparent full-screen activity, and
+the drawing happens there. In daily use it feels like drawing on the home
+screen, but the drawing technically happens in that transparent activity,
+not inside the widget.
+
+## Build
+
+Requirements: JDK 17 and the Android SDK (platform-tools,
+`platforms;android-35`, `build-tools;35.0.0`).
+
+### Standard build (Gradle)
+
+```sh
+export ANDROID_HOME=$HOME/android-sdk
+./gradlew assembleDebug
+```
+
+For a signed release build, pass the keystore details as Gradle
+properties (never commit them):
+
+```sh
+./gradlew assembleRelease \
+  -PflickStoreFile=$HOME/.config/flick/flick-release.keystore \
+  -PflickStorePassword=... \
+  -PflickKeyAlias=flick \
+  -PflickKeyPassword=...
+```
+
+### Daemon-free manual build (used for v1.0.0)
+
+v1.0.0 was built without Gradle because the build sandbox blocks loopback
+TCP, which Gradle's daemon protocol needs (every Gradle invocation fails
+with "Could not receive a message from the daemon"). The manual pipeline
+uses only local tools, so it works anywhere:
+
+```sh
+# One-time: fetch the dependency jars (Compose, DataStore, coroutines)
+python3 tools/resolve_deps.py tools/seeds.txt build/deps
+
+# Build, sign and verify the release APK
+bash tools/build-manual.sh
+# Output: build/flick-release.apk
+```
+
+`tools/build-manual.sh` runs aapt2 (compile + link, generating `R.java`),
+kotlinc 2.0.21 with the Compose compiler plugin, d8, zipalign and
+apksigner. It reads the keystore passwords from
+`~/.config/flick/keystore.properties` (never committed). If you build on a
+machine where Gradle works, prefer the standard Gradle build; the manual
+script exists as a fallback.
+
+## Release signing
+
+The release keystore is **not** in this repo. Keep it safe: every future
+release must be signed with the same keystore, or Android will refuse to
+update the installed app.
+
+## Roadmap (not in v1)
+
+- Multi-step Flows with conditions
+- AccessibilityService-backed actions (optional, with disclosure)
+- Gesture import/export
+- Stroke styling (glow, dashed lines)
+
+## Originality
+
+Flick is 100% original code written for this project. It shares a concept
+with other gesture launchers (draw to launch) but copies no code, assets,
+branding, or resources from any other app.

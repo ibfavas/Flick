@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Platform Material theme: Compose Material3 ships no XML themes, so
+         the old Theme.Material3.DayNight.NoActionBar parent did not exist in
+         any dependency and broke resource linking. All UI is drawn by
+         Compose's MaterialTheme (see ui/Theme.kt); this theme only sets the
+         window chrome. -->
+    <style name="Theme.Flick" parent="android:Theme.Material.NoActionBar" />
+
+    <!-- Transparent theme for the gesture pad activity. -->
+    <style name="Theme.Flick.Draw" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>
