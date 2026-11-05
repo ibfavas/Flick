@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,12 +73,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +90,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -97,6 +103,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.ibfavas.flick.R
@@ -107,9 +114,27 @@ import com.ibfavas.flick.data.GestureDao
 import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.gesture.Recognizer
 import com.ibfavas.flick.gesture.StrokePoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class Screen { LIST, RECORD, TEST, SETTINGS }
+
+/** Home-screen categories, inspired by Glyf's tabs but Flick's own set. */
+private enum class GestureCategory(val label: String) {
+    ALL("All"),
+    APPS("Apps"),
+    ACTIONS("Actions"),
+    WEBPAGES("Webpages");
+
+    fun matches(gesture: Gesture): Boolean = when (this) {
+        ALL -> true
+        APPS -> gesture.actionType == ActionType.LAUNCH_APP
+        WEBPAGES -> gesture.actionType == ActionType.OPEN_URL
+        ACTIONS -> gesture.actionType != ActionType.LAUNCH_APP &&
+            gesture.actionType != ActionType.OPEN_URL
+    }
+}
 
 /**
  * Flick v1.0.6: the new brand. Deep teal, white text, one bright cyan
@@ -122,6 +147,15 @@ private enum class Screen { LIST, RECORD, TEST, SETTINGS }
 fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean = false) {
     var screen by remember { mutableStateOf(if (openSettings) Screen.SETTINGS else Screen.LIST) }
     BackHandler(enabled = screen != Screen.LIST) { screen = Screen.LIST }
+    // Every screen sits inside a Surface: without one, Text without an
+    // explicit colour falls back to LocalContentColor, which defaults to
+    // black — dark text on the dark teal background, which is how the
+    // record screen's labels became unreadable in v1.0.6. The Surface
+    // provides the theme's onBackground (white) as the content colour.
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
     AnimatedContent(
         targetState = screen,
         transitionSpec = {
@@ -156,6 +190,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
             )
         }
     }
+    }
 }
 
 // ---------------------------------------------------------------- list
@@ -172,6 +207,10 @@ private fun GestureListScreen(
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Gesture?>(null) }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
+    var category by remember { mutableStateOf(GestureCategory.ALL) }
+    val filtered = remember(gestures, category) {
+        gestures.filter { category.matches(it) }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -222,32 +261,66 @@ private fun GestureListScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "GESTURES (${gestures.size} saved)",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+                color = FlickBrand.TextWhite
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GestureCategory.entries.forEach { tab ->
+                    CategoryTab(
+                        label = tab.label,
+                        selected = category == tab,
+                        onClick = { category = tab }
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
-            if (gestures.isEmpty()) {
+            if (filtered.isEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 48.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        "No gestures yet",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Tap + to draw your first gesture, then pick what it should do.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (gestures.isEmpty()) {
+                        Text(
+                            "No gestures yet",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = FlickBrand.TextWhite
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Tap + to draw your first gesture, then pick what it should do.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            "No gestures in this category",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = FlickBrand.TextWhite
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Try another tab, or tap + to add one here.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    items(gestures, key = { it.id }) { gesture ->
+                    items(filtered, key = { it.id }) { gesture ->
                         AnimatedVisibility(
                             visible = true,
                             enter = fadeIn(animationSpec = tween(250)) +
@@ -295,6 +368,31 @@ private fun GestureListScreen(
             dismissButton = {
                 TextButton(onClick = { deleting = null }) { Text("Cancel") }
             }
+        )
+    }
+}
+
+/**
+ * A category pill for the home screen. Selected: cyan fill, dark text.
+ * Unselected: teal surface, white text.
+ */
+@Composable
+private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (selected) FlickBrand.Cyan else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) FlickBrand.CyanDark else FlickBrand.TextWhite
         )
     }
 }
@@ -499,8 +597,6 @@ private fun RecordScreen(
     onSaved: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
-    val strokeWidth by settings.strokeWidth.collectAsState(initial = SettingsStore.DEFAULT_WIDTH)
     var name by remember { mutableStateOf("") }
     var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
     var action by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
@@ -532,7 +628,10 @@ private fun RecordScreen(
             )
         }
         item {
-            Text("Draw your gesture in the box:")
+            Text(
+                "Draw your gesture in the box:",
+                color = FlickBrand.TextWhite
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -546,8 +645,6 @@ private fun RecordScreen(
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 DrawPad(
-                    strokeColor = Color(strokeColor),
-                    strokeWidth = strokeWidth,
                     modifier = Modifier.fillMaxSize().padding(8.dp),
                     onGestureFinished = { captured = it },
                     onCleared = { captured = null }
@@ -566,7 +663,11 @@ private fun RecordScreen(
             )
         }
         item {
-            Text("What should it do?", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "What should it do?",
+                style = MaterialTheme.typography.titleMedium,
+                color = FlickBrand.TextWhite
+            )
             ActionPicker(action = action, onChange = { action = it })
         }
         item {
@@ -683,11 +784,24 @@ private fun ActionOption(label: String, selected: Boolean, onClick: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(selected = selected, onClick = onClick)
-        Text(label)
+        Text(label, color = FlickBrand.TextWhite)
     }
 }
 
-private data class LaunchableApp(val label: String, val packageName: String, val icon: Drawable?)
+private data class LaunchableApp(val label: String, val packageName: String)
+
+/**
+ * The app list, cached for the life of the process. The PackageManager
+ * query is slow (hundreds of apps), so it runs once on a background
+ * thread and every later opening of the picker is instant. Icons are
+ * loaded lazily per visible row, also off the main thread, and cached
+ * the same way. v1.0.6 queried and decoded every icon up front on the
+ * main thread, which is why opening the picker stalled.
+ */
+private object AppListCache {
+    var apps: List<LaunchableApp>? = null
+    val icons = mutableStateMapOf<String, ImageBitmap?>()
+}
 
 @Composable
 private fun AppPickerDialog(
@@ -695,28 +809,36 @@ private fun AppPickerDialog(
     onDismiss: () -> Unit,
     onPick: (String, String) -> Unit
 ) {
-    var apps by remember { mutableStateOf<List<LaunchableApp>?>(null) }
+    var apps by remember { mutableStateOf(AppListCache.apps) }
     LaunchedEffect(Unit) {
-        val pm = context.packageManager
-        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val infos: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.queryIntentActivities(main, PackageManager.ResolveInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.queryIntentActivities(main, 0)
+        if (apps == null) {
+            val loaded = withContext(Dispatchers.IO) {
+                val pm = context.packageManager
+                val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val infos: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.queryIntentActivities(main, PackageManager.ResolveInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.queryIntentActivities(main, 0)
+                }
+                // Dedupe by package: some apps expose several launcher
+                // activities (Amazon is one), and a repeated package name
+                // breaks LazyColumn, which needs a unique key per item.
+                // Keep the first launcher entry per package, so each
+                // package appears exactly once. No icons here: loading
+                // and decoding every icon up front is what made the
+                // picker slow. Icons load lazily per visible row.
+                infos.mapNotNull { info ->
+                    val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
+                    LaunchableApp(
+                        label = info.loadLabel(pm).toString(),
+                        packageName = packageName
+                    )
+                }.distinctBy { it.packageName }.sortedBy { it.label.lowercase() }
+            }
+            AppListCache.apps = loaded
+            apps = loaded
         }
-        // Dedupe by package: some apps expose several launcher activities
-        // (Amazon is one), and a repeated package name breaks LazyColumn,
-        // which needs a unique key per item. Keep the first launcher entry
-        // per package, so each package appears exactly once.
-        apps = infos.mapNotNull { info ->
-            val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-            LaunchableApp(
-                label = info.loadLabel(pm).toString(),
-                packageName = packageName,
-                icon = try { info.loadIcon(pm) } catch (e: Exception) { null }
-            )
-        }.distinctBy { it.packageName }.sortedBy { it.label.lowercase() }
     }
 
     AlertDialog(
@@ -735,19 +857,14 @@ private fun AppPickerDialog(
                             }.padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            app.icon?.let { drawable ->
-                                val bitmap = remember(drawable) {
-                                    drawable.toBitmap(width = 96, height = 96)
-                                }
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp).padding(end = 8.dp)
-                                )
-                            }
+                            AppRowIcon(context = context, packageName = app.packageName)
                             Column {
                                 Text(app.label, style = MaterialTheme.typography.bodyMedium)
-                                Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -761,6 +878,42 @@ private fun AppPickerDialog(
     )
 }
 
+/**
+ * One app icon, loaded off the main thread the first time its row
+ * becomes visible, then cached. Reading the cache map inside composition
+ * subscribes the row to it, so the icon appears as soon as it loads.
+ */
+@Composable
+private fun AppRowIcon(context: Context, packageName: String) {
+    val bitmap = AppListCache.icons[packageName]
+    if (bitmap == null) {
+        LaunchedEffect(packageName) {
+            val loaded = withContext(Dispatchers.IO) {
+                try {
+                    context.packageManager.getApplicationIcon(packageName)
+                        .toBitmap(width = 96, height = 96).asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (loaded != null) AppListCache.icons[packageName] = loaded
+        }
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .padding(end = 8.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        )
+    } else {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp).padding(end = 8.dp)
+        )
+    }
+}
+
 // ---------------------------------------------------------------- test pad
 
 @Composable
@@ -771,8 +924,6 @@ private fun TestPadScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
-    val strokeWidth by settings.strokeWidth.collectAsState(initial = SettingsStore.DEFAULT_WIDTH)
     var result by remember { mutableStateOf<String?>(null) }
     var matched by remember { mutableStateOf<Gesture?>(null) }
 
@@ -811,8 +962,6 @@ private fun TestPadScreen(
                 .background(MaterialTheme.colorScheme.surface)
         ) {
             DrawPad(
-                strokeColor = Color(strokeColor),
-                strokeWidth = strokeWidth,
                 modifier = Modifier.fillMaxSize().padding(8.dp),
                 onGestureFinished = { raw ->
                     scope.launch {
@@ -870,33 +1019,41 @@ private fun TestPadScreen(
 
 // ---------------------------------------------------------------- settings
 
-/** Stroke colours. Cyan first: it is the brand colour and the default. */
-private val STROKE_COLORS = listOf(
-    0xFF00E5FFL to "Cyan",
-    0xFFFFFFFFL to "White",
-    0xFF4CAF50L to "Green",
-    0xFFFFC107L to "Amber",
-    0xFF8ECDF0L to "Blue",
-    0xFFFF3B30L to "Red"
-)
+// ---------------------------------------------------------------- settings
 
+/**
+ * Settings, in Flick's own design but with the same depth of features
+ * Glyf has: Permissions, Overlay, Triggers and Reliability. Every label
+ * is white or light grey on the dark teal background, never dark text
+ * on a dark surface.
+ */
 @Composable
 private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
-    val strokeWidth by settings.strokeWidth.collectAsState(initial = SettingsStore.DEFAULT_WIDTH)
+    val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
+    val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
+    val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
+    val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
+        initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
+    )
     var cameraGranted by remember {
         mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
         )
     }
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> cameraGranted = granted }
+    var notificationsGranted by remember { mutableStateOf(notificationsGranted(context)) }
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> notificationsGranted = granted }
+    var overlayGranted by remember { mutableStateOf(overlayGranted(context)) }
+    val overlayLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { overlayGranted = overlayGranted(context) }
 
     LazyColumn(
         modifier = Modifier
@@ -914,92 +1071,288 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
                 Text(
                     "Settings",
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = FlickBrand.TextWhite
                 )
             }
-            Text("Stroke colour", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                STROKE_COLORS.forEach { (value, name) ->
-                    StrokeColorChip(
-                        value = value,
-                        selected = strokeColor == value,
-                        onClick = { scope.launch { settings.setStrokeColor(value) } }
+        }
+        item {
+            SettingsSection(title = "Permissions") {
+                PermissionRow(
+                    title = "Appear over apps",
+                    description = "Ready for the drawing overlay.",
+                    granted = overlayGranted,
+                    grantedText = "Enabled",
+                    onAllow = {
+                        overlayLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + context.packageName)
+                            )
+                        )
+                    }
+                )
+                PermissionRow(
+                    title = "Notifications",
+                    description = "Allow tap-to-draw notification shortcuts.",
+                    granted = notificationsGranted,
+                    grantedText = "Allowed",
+                    onAllow = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                )
+                PermissionRow(
+                    title = "Accessibility service (Optional)",
+                    description = "Optional. Flick's current actions don't need it.",
+                    granted = false,
+                    grantedText = "",
+                    onAllow = {
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    },
+                    allowText = "Open"
+                )
+                PermissionRow(
+                    title = "Camera",
+                    description = if (cameraGranted) {
+                        "Granted. Flashlight actions will work."
+                    } else {
+                        "Needed for the flashlight actions."
+                    },
+                    granted = cameraGranted,
+                    grantedText = "Granted",
+                    onAllow = { cameraLauncher.launch(Manifest.permission.CAMERA) }
+                )
+            }
+        }
+        item {
+            SettingsSection(title = "Overlay") {
+                SettingSlider(
+                    label = "Background Blur",
+                    valueText = "${blurPx}px",
+                    value = blurPx.toFloat(),
+                    range = 0f..SettingsStore.MAX_BLUR_PX.toFloat(),
+                    steps = SettingsStore.MAX_BLUR_PX - 1,
+                    description = "Frosted glass background blur when the drawing pad is active (Android 12 and up).",
+                    onChange = { scope.launch { settings.setOverlayBlur(it.toInt()) } }
+                )
+                SettingSlider(
+                    label = "Overlay opacity",
+                    valueText = "${(opacity * 100).toInt()}%",
+                    value = opacity,
+                    range = 0f..1f,
+                    steps = 0,
+                    description = "Controls how dim the screen gets while the overlay is open.",
+                    onChange = { scope.launch { settings.setOverlayOpacity(it) } }
+                )
+                SettingSlider(
+                    label = "Overlay timeout",
+                    valueText = if (timeoutSeconds == 0) "Off" else "${timeoutSeconds}s",
+                    value = timeoutSeconds.toFloat(),
+                    range = 0f..SettingsStore.MAX_TIMEOUT_S.toFloat(),
+                    steps = SettingsStore.MAX_TIMEOUT_S - 1,
+                    description = "Seconds the pad waits with no gesture before closing on its own. " +
+                        "Disabled while multi-stroke is on — the overlay stays open once you start drawing.",
+                    onChange = { scope.launch { settings.setOverlayTimeout(it.toInt()) } }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Auto close on fail",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = FlickBrand.TextWhite
+                        )
+                        Text(
+                            "Close the pad after a gesture that matched nothing.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoCloseOnFail,
+                        onCheckedChange = { scope.launch { settings.setAutoCloseOnFail(it) } }
                     )
                 }
             }
-            Text("Selected: ${STROKE_COLORS.firstOrNull { it.first == strokeColor }?.second ?: "Custom"}")
         }
         item {
-            Text("Stroke width: ${strokeWidth.toInt()} px", style = MaterialTheme.typography.titleMedium)
-            Slider(
-                value = strokeWidth,
-                onValueChange = { scope.launch { settings.setStrokeWidth(it) } },
-                valueRange = 4f..24f
-            )
-        }
-        item {
-            Text("Camera permission", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (cameraGranted) {
-                    "Granted. Flashlight actions will work."
-                } else {
-                    "Needed for the flashlight actions."
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (!cameraGranted) {
-                Button(onClick = {
-                    permissionLauncher.launch(Manifest.permission.CAMERA)
-                }) { Text("Grant camera permission") }
+            SettingsSection(title = "Triggers") {
+                Text(
+                    "Add the Flick widget to your home screen: it is fully transparent, " +
+                        "so it looks like empty space. Tap it to open the gesture pad. " +
+                        "You can also add the Flick tile from the Quick Settings panel.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Note: Android widgets only support taps, not stroke tracking. " +
+                        "Drawing happens in the frosted-glass pad that opens when you " +
+                        "tap the widget, not inside the widget itself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         item {
-            Text("Triggers", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Add the Flick widget to your home screen: it is fully transparent, " +
-                    "so it looks like empty space. Tap it to open the gesture pad. " +
-                    "You can also add the Flick tile from the Quick Settings panel.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                "Note: Android widgets only support taps, not stroke tracking. " +
-                    "Drawing happens in the transparent pad that opens when you " +
-                    "tap the widget, not inside the widget itself.",
-                style = MaterialTheme.typography.bodySmall
-            )
+            SettingsSection(title = "Reliability") {
+                Text(
+                    "Let Flick run without battery limits, so the widget and tile " +
+                        "respond instantly.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        )
+                    }
+                ) {
+                    Text("Open battery settings")
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Your gestures are stored only on this device. Nothing is uploaded.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
+private fun notificationsGranted(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun overlayGranted(context: Context): Boolean =
+    Settings.canDrawOverlays(context)
+
+/** One settings section: a title above a rounded teal card. */
 @Composable
-private fun StrokeColorChip(value: Long, selected: Boolean, onClick: () -> Unit) {
-    val borderColor by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.outline
-        },
-        label = "chipBorder"
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (selected) 1.18f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "chipScale"
-    )
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(CircleShape)
-            .background(Color(value))
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = borderColor,
-                shape = CircleShape
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+    Column {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = FlickBrand.TextWhite,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+/** One permission row: title, description, and a status pill or an Allow button. */
+@Composable
+private fun PermissionRow(
+    title: String,
+    description: String,
+    granted: Boolean,
+    grantedText: String,
+    onAllow: () -> Unit,
+    allowText: String = "Allow"
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = FlickBrand.TextWhite
             )
-            .clickable(onClick = onClick)
-    )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        if (granted) {
+            Text(
+                grantedText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = FlickBrand.TextWhite,
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(20.dp)
+                    )
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            )
+        } else {
+            OutlinedButton(onClick = onAllow) {
+                Text(allowText)
+            }
+        }
+    }
+}
+
+/** A labelled slider with a value chip and a description underneath. */
+@Composable
+private fun SettingSlider(
+    label: String,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    description: String,
+    onChange: (Float) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = FlickBrand.TextWhite,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                valueText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = FlickBrand.TextWhite,
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            steps = steps
+        )
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }

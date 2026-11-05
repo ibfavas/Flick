@@ -28,10 +28,42 @@ data class StrokePoint(val x: Float, val y: Float)
  */
 object Recognizer {
 
-    const val RESAMPLE_COUNT = 64
+    /**
+     * Accuracy tuning (v1.0.7, measured with tools/recognizer-test on
+     * 390 varied copies of 13 shapes plus 100 unknown shapes and random
+     * walks, all seeded):
+     *
+     * - Resample to 96 points (was 64): finer shape detail, so similar
+     *   shapes are less likely to collide.
+     * - Default threshold 0.85 (was 0.70): correct matches score 0.92 and
+     *   up even when sloppy, rotated or rescaled, while scribbles and
+     *   unknown shapes mostly score 0.70-0.85. A low-confidence match
+     *   must show "no match", never launch the wrong app.
+     * - Stroke-count penalty: a candidate drawn with a different number
+     *   of strokes than the template loses 0.12. A one-stroke circle
+     *   must not match a two-stroke Q, and vice versa. Small enough
+     *   that an accidental extra lift (one stroke split in two) still
+     *   passes at ~0.86.
+     * - Orientation penalty: the indicative-angle rotation makes a "+"
+     *   and an "x" identical, so a plus matched an x template at 0.98.
+     *   When both joined paths are open (not closed shapes like a
+     *   circle), the score loses up to 0.15 for a large difference in
+     *   indicative angle (none under 15 degrees of tilt, full at 45).
+     *   Closed shapes skip it, because their start point is arbitrary.
+     * - Minimum size: a gesture smaller than 30 px across or shorter
+     *   than 60 px of path is an accidental touch, not a gesture.
+     */
+    const val RESAMPLE_COUNT = 96
+    const val DEFAULT_THRESHOLD = 0.85f
     private const val SQUARE_SIZE = 250f
     private const val HALF_DIAGONAL = 0.5f * 353.55f // 0.5 * sqrt(250^2 + 250^2)
     private const val MAX_PERMUTED_STROKES = 4
+    private const val STROKE_COUNT_PENALTY = 0.12f
+    private const val ORIENTATION_PENALTY_MAX = 0.15f
+    private const val ORIENTATION_FREE_DEGREES = 15f
+    private const val ORIENTATION_FULL_DEGREES = 45f
+    private const val MIN_GESTURE_SIZE_PX = 30f
+    private const val MIN_GESTURE_LENGTH_PX = 60f
 
     data class Template(val name: String, val points: List<StrokePoint>)
 
@@ -63,23 +95,30 @@ object Recognizer {
     }
 
     /**
-     * Every normalized variant of a template, one per stroke ordering.
-     * With more than [MAX_PERMUTED_STROKES] strokes only the drawn order is
-     * used, to keep the permutation count bounded. Identical variants are
-     * de-duplicated.
+     * Every normalized variant of a template, one per stroke ordering,
+     * each paired with the raw joined path of that ordering (needed for
+     * the orientation penalty). With more than [MAX_PERMUTED_STROKES]
+     * strokes only the drawn order is used, to keep the permutation
+     * count bounded. Identical variants are de-duplicated.
      */
-    fun templateVariants(strokes: List<List<StrokePoint>>): List<List<StrokePoint>> {
+    fun templateVariants(strokes: List<List<StrokePoint>>): List<Pair<List<StrokePoint>, List<StrokePoint>>> {
         val usable = strokes.filter { it.size >= 2 }
         if (usable.isEmpty()) return emptyList()
-        if (usable.size == 1) return listOf(normalize(usable[0]))
+        if (usable.size == 1) {
+            val joined = usable[0]
+            return listOf(normalize(joined) to joined)
+        }
         val orders: List<List<List<StrokePoint>>> =
             if (usable.size <= MAX_PERMUTED_STROKES) permutations(usable) else listOf(usable)
         val seen = LinkedHashSet<List<StrokePoint>>()
+        val out = mutableListOf<Pair<List<StrokePoint>, List<StrokePoint>>>()
         for (order in orders) {
             val normalized = normalizeMulti(order)
-            if (normalized.isNotEmpty()) seen.add(normalized)
+            if (normalized.isNotEmpty() && seen.add(normalized)) {
+                out.add(normalized to order.flatten())
+            }
         }
-        return seen.toList()
+        return out
     }
 
     /** Score [candidate] against a normalized [template]. Higher is better (0..1). */
@@ -93,7 +132,7 @@ object Recognizer {
     fun recognize(
         raw: List<StrokePoint>,
         templates: List<Template>,
-        threshold: Float = 0.7f
+        threshold: Float = DEFAULT_THRESHOLD
     ): Match? {
         if (raw.size < 2 || templates.isEmpty()) return null
         val candidate = normalize(raw)
@@ -109,24 +148,98 @@ object Recognizer {
      * Find the best matching multi-stroke template for raw drawn strokes, or
      * null if none scores above [threshold]. The candidate is normalised in
      * its drawn order; each template is tried in every stroke ordering.
+     * A candidate with a different stroke count than the template, or a
+     * large indicative-angle difference on open shapes, is penalised, so
+     * near-misses fail cleanly instead of launching the wrong app.
      */
     fun recognizeMulti(
         rawStrokes: List<List<StrokePoint>>,
         templates: List<MultiTemplate>,
-        threshold: Float = 0.7f
+        threshold: Float = DEFAULT_THRESHOLD
     ): Match? {
-        val candidate = normalizeMulti(rawStrokes)
-        if (candidate.isEmpty() || templates.isEmpty()) return null
+        val usable = rawStrokes.filter { it.size >= 2 }
+        if (usable.isEmpty() || templates.isEmpty()) return null
+        if (!isBigEnough(usable)) return null
+        val candidate = normalizeMulti(usable)
+        if (candidate.isEmpty()) return null
+        val candidateRaw = usable.flatten()
+        val candidateAngle = indicativeAngle(candidateRaw)
+        val candidateOpen = isOpenPath(candidateRaw)
         var best: Match? = null
         for (template in templates) {
-            for (variant in templateVariants(template.strokes)) {
-                val s = score(variant, candidate)
+            val templateStrokeCount = template.strokes.count { it.size >= 2 }
+            val countPenalty =
+                if (templateStrokeCount != usable.size) STROKE_COUNT_PENALTY else 0f
+            for ((variant, variantRaw) in templateVariants(template.strokes)) {
+                var s = score(variant, candidate) - countPenalty
+                if (candidateOpen && isOpenPath(variantRaw)) {
+                    val diff = angleDifference(candidateAngle, indicativeAngle(variantRaw))
+                    val excess = (diff - ORIENTATION_FREE_DEGREES).coerceIn(
+                        0f,
+                        ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES
+                    )
+                    s -= ORIENTATION_PENALTY_MAX * excess /
+                        (ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES)
+                }
                 if (best == null || s > best.score) {
                     best = Match(Template(template.name, variant), s)
                 }
             }
         }
         return best?.takeIf { it.score >= threshold }
+    }
+
+    /** Smallest absolute difference between two angles, in degrees (0..180). */
+    private fun angleDifference(a: Float, b: Float): Float {
+        var diff = kotlin.math.abs(a - b) * 180f / Math.PI.toFloat()
+        diff %= 360f
+        if (diff > 180f) diff = 360f - diff
+        return diff
+    }
+
+    /**
+     * True if the path is open: its ends are far apart relative to its
+     * size. Closed shapes (a circle, a square) end where they started,
+     * so their indicative angle depends on the arbitrary start point and
+     * must not be compared.
+     */
+    private fun isOpenPath(points: List<StrokePoint>): Boolean {
+        if (points.size < 2) return false
+        val first = points.first()
+        val last = points.last()
+        val endGap = distance(first, last)
+        var minX = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = Float.MIN_VALUE
+        for (p in points) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+        }
+        val diagonal = hypot((maxX - minX).toDouble(), (maxY - minY).toDouble()).toFloat()
+        return diagonal > 0f && endGap > diagonal * 0.25f
+    }
+
+    /** True if the gesture is big enough to be deliberate, not an accidental touch. */
+    private fun isBigEnough(strokes: List<List<StrokePoint>>): Boolean {
+        var minX = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = Float.MIN_VALUE
+        var length = 0f
+        for (stroke in strokes) {
+            for (p in stroke) {
+                if (p.x < minX) minX = p.x
+                if (p.x > maxX) maxX = p.x
+                if (p.y < minY) minY = p.y
+                if (p.y > maxY) maxY = p.y
+            }
+            length += pathLength(stroke)
+        }
+        val size = maxOf(maxX - minX, maxY - minY)
+        return size >= MIN_GESTURE_SIZE_PX && length >= MIN_GESTURE_LENGTH_PX
     }
 
     private fun <T> permutations(items: List<T>): List<List<T>> {

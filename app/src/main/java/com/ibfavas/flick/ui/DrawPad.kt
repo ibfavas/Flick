@@ -1,10 +1,13 @@
 package com.ibfavas.flick.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +42,9 @@ import kotlinx.coroutines.launch
 /** Time with no new stroke after which the gesture is finished automatically. */
 private const val STROKE_TIMEOUT_MS = 900L
 
+/** How long the "Draw a gesture" hint stays visible before fading away. */
+private const val HINT_VISIBLE_MS = 2000L
+
 /**
  * A drawing pad that captures multi-stroke gestures. Draw a stroke, lift,
  * and draw again to add another stroke to the same gesture, just like
@@ -46,30 +53,45 @@ private const val STROKE_TIMEOUT_MS = 900L
  * receives all strokes. Done finishes immediately, Clear wipes the pad.
  * Every stroke drawn so far stays visible.
  *
+ * The stroke is fixed brand cyan at a fixed width (v1.0.7): there is no
+ * colour or width setting any more, so every stroke looks the same.
+ *
+ * The pad keeps its chrome minimal: a short "Draw a gesture" hint that
+ * fades away after a couple of seconds, and small Done/Clear chips that
+ * only appear while a stroke is actually on screen. There is no
+ * persistent bar explaining multi-stroke; the behaviour is the same.
+ *
  * Performance: finished strokes keep a cached [Path]; only the live stroke
  * is extended as the finger moves. Rebuilding every stroke's Path on every
  * frame made the pad stutter on long gestures.
  */
 @Composable
 fun DrawPad(
-    strokeColor: Color,
-    strokeWidth: Float,
     modifier: Modifier = Modifier,
     onGestureFinished: (List<List<StrokePoint>>) -> Unit,
     onCleared: () -> Unit = {},
+    /** Called once, when the first stroke of a gesture starts. */
+    onFirstStroke: () -> Unit = {},
     /**
      * Draw a dark outline under the stroke so it stays readable over any
-     * background. Used by the transparent pad, which sits on top of
+     * background. Used by the frosted-glass pad, which sits on top of
      * whatever the user was doing.
      */
     strokeOutline: Boolean = false
 ) {
+    val strokeColor = FlickBrand.StrokeColor
+    val strokeWidth = FlickBrand.StrokeWidth
     var strokes by remember { mutableStateOf(listOf<List<Offset>>()) }
     var currentStroke by remember { mutableStateOf(listOf<Offset>()) }
     val strokePaths = remember { mutableStateListOf<Path>() }
     var currentPath by remember { mutableStateOf<Path?>(null) }
     val scope = rememberCoroutineScope()
     var timerJob by remember { mutableStateOf<Job?>(null) }
+    var showHint by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(HINT_VISIBLE_MS)
+        showHint = false
+    }
 
     fun finishGesture() {
         timerJob?.cancel()
@@ -109,14 +131,16 @@ fun DrawPad(
         return length
     }
 
-    Column(modifier = modifier) {
+    Box(modifier = modifier) {
         Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = { offset ->
+                            if (strokes.isEmpty() && currentStroke.isEmpty()) {
+                                onFirstStroke()
+                            }
                             timerJob?.cancel()
                             timerJob = null
                             currentStroke = listOf(offset)
@@ -171,38 +195,60 @@ fun DrawPad(
                 }
             }
         }
-        Row(
+        // Short hint, gone after a couple of seconds. It never sits on
+        // top of anything the user needs to read.
+        AnimatedVisibility(
+            visible = showHint,
+            enter = fadeIn(),
+            exit = fadeOut(),
             modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                    RoundedCornerShape(16.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 20.dp)
         ) {
             Text(
-                text = if (strokes.isEmpty()) {
-                    "Draw a gesture. Lift and draw again to add a stroke."
-                } else {
-                    val count = strokes.size
-                    "$count stroke${if (count == 1) "" else "s"} so far. Draw again, or tap Done."
-                },
-                color = Color.White.copy(alpha = 0.75f),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
+                text = "Draw a gesture",
+                color = FlickBrand.TextWhite,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .background(
+                        Color.Black.copy(alpha = 0.35f),
+                        RoundedCornerShape(20.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             )
-            TextButton(
-                onClick = { finishGesture() },
-                enabled = strokes.isNotEmpty()
+        }
+        // Done and Clear only exist while there is something to finish
+        // or clear. They sit above the hint's spot, so the two never overlap.
+        AnimatedVisibility(
+            visible = strokes.isNotEmpty(),
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Done", color = MaterialTheme.colorScheme.primary)
-            }
-            TextButton(
-                onClick = { clearAll() },
-                enabled = strokes.isNotEmpty() || currentStroke.isNotEmpty()
-            ) {
-                Text("Clear", color = Color.White.copy(alpha = 0.85f))
+                TextButton(
+                    onClick = { finishGesture() },
+                    modifier = Modifier.background(
+                        FlickBrand.TealSurface.copy(alpha = 0.85f),
+                        RoundedCornerShape(20.dp)
+                    )
+                ) {
+                    Text("Done", color = FlickBrand.Cyan)
+                }
+                TextButton(
+                    onClick = { clearAll() },
+                    modifier = Modifier.background(
+                        FlickBrand.TealSurface.copy(alpha = 0.85f),
+                        RoundedCornerShape(20.dp)
+                    )
+                ) {
+                    Text("Clear", color = FlickBrand.TextWhite)
+                }
             }
         }
     }

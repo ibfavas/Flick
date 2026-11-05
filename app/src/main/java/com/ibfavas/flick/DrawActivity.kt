@@ -1,6 +1,7 @@
 package com.ibfavas.flick
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,23 +12,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ibfavas.flick.actions.ActionExecutor
 import com.ibfavas.flick.data.DatabaseProvider
@@ -50,28 +49,37 @@ import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.gesture.Recognizer
 import com.ibfavas.flick.gesture.StrokePoint
 import com.ibfavas.flick.ui.DrawPad
+import com.ibfavas.flick.ui.FlickBrand
 import com.ibfavas.flick.ui.FlickTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Transparent full-screen activity launched by the invisible widget and the
- * Quick Settings tile. The pad is a see-through overlay: the screen the
- * user was on stays visible underneath, with only a very light dim so the
- * stroke reads. The user draws a gesture; on a match the action runs and
- * the activity finishes. On no match, a message shows and the pad stays
- * open for another try.
+ * Frosted-glass full-screen activity launched by the invisible widget and
+ * the Quick Settings tile. The pad is glass, not invisible: the screen
+ * the user was on shows through faintly, blurred, under a semi-transparent
+ * teal tint, so the pad is clearly a surface of its own. The stroke is
+ * brand cyan with a dark outline, so it reads over any background.
+ *
+ * The user draws a gesture; on a match the action runs and the activity
+ * finishes. On no match, a message shows; with auto-close on fail the pad
+ * closes shortly after, otherwise it stays open for another try. If no
+ * gesture is drawn within the overlay timeout, the pad closes on its own
+ * (once drawing starts, multi-stroke keeps it open until the gesture
+ * is done).
  *
  * Note: Android widgets only support taps, not stroke tracking, so drawing
- * happens here in this transparent activity rather than inside the widget.
+ * happens here in this activity rather than inside the widget.
  */
 class DrawActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Transparent window, no dim: the underlying screen must stay
-        // visible. The theme (Theme.Flick.Draw) already sets this up;
-        // these calls make it explicit so a theme change cannot make the
-        // pad solid by accident.
+        // Frosted glass starts at the window: a transparent background
+        // with no dim, so the screen underneath can be blurred and
+        // tinted by the content instead of hidden. The theme
+        // (Theme.Flick.Draw) already sets this up; these calls make it
+        // explicit so a theme change cannot make the pad solid by accident.
         window.setBackgroundDrawableResource(android.R.color.transparent)
         window.setDimAmount(0f)
 
@@ -110,11 +118,40 @@ private fun DrawScreen(
     onOpenSettings: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
-    val strokeWidth by settings.strokeWidth.collectAsState(initial = SettingsStore.DEFAULT_WIDTH)
+    val activity = LocalContext.current as? android.app.Activity
+    val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
+    val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
+    val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
+    val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
+        initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
+    )
     var message by remember { mutableStateOf<String?>(null) }
+    var drawn by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+
+    // Blur the screen behind the window (Android 12 and up). The blur
+    // radius comes from settings; 0 means no blur, just the tint.
+    LaunchedEffect(blurPx) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                activity?.window?.setBackgroundBlurRadius(blurPx)
+            } catch (e: Exception) {
+                // Some devices do not support window blur; the tint alone
+                // still reads as frosted glass.
+            }
+        }
+    }
+
+    // Close on its own if no gesture is drawn within the timeout. Once
+    // drawing starts, multi-stroke keeps the pad open until the gesture
+    // finishes, so the timer is cancelled for good.
+    LaunchedEffect(timeoutSeconds, drawn) {
+        if (timeoutSeconds > 0 && !drawn) {
+            delay(timeoutSeconds * 1000L)
+            onClose()
+        }
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -123,68 +160,68 @@ private fun DrawScreen(
         exit = fadeOut(animationSpec = tween(150)),
         modifier = Modifier.fillMaxSize()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Transparent)
-        ) {
-            // At most a very light dim: 8% black just lifts the stroke
-            // off the screen underneath. The screen stays clearly visible.
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Frosted glass: a semi-transparent teal tint over the
+            // blurred screen underneath. The screen stays faintly
+            // visible; the pad is unmistakably a surface.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.08f))
+                    .background(FlickBrand.TealBackground.copy(alpha = opacity))
             )
-            Column(modifier = Modifier.fillMaxSize()) {
-                DrawPad(
-                    strokeColor = Color(strokeColor),
-                    strokeWidth = strokeWidth,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    onGestureFinished = { raw: List<List<StrokePoint>> ->
-                        scope.launch {
-                            val gestures = dao.getAll()
-                            val templates = gestures.map { gesture ->
-                                Recognizer.MultiTemplate(
-                                    gesture.name,
-                                    Recognizer.strokesFromString(gesture.template)
-                                )
-                            }
-                            val match = Recognizer.recognizeMulti(raw, templates)
-                            val gesture = match?.let { m ->
-                                gestures.firstOrNull { it.name == m.template.name }
-                            }
-                            if (gesture == null) {
-                                message = "No matching gesture"
-                            } else {
-                                onMatched(gesture)
-                            }
+            DrawPad(
+                modifier = Modifier.fillMaxSize(),
+                onGestureFinished = { raw: List<List<StrokePoint>> ->
+                    scope.launch {
+                        val gestures = dao.getAll()
+                        val templates = gestures.map { gesture ->
+                            Recognizer.MultiTemplate(
+                                gesture.name,
+                                Recognizer.strokesFromString(gesture.template)
+                            )
                         }
-                    },
-                    onCleared = { message = null },
-                    // The pad sits on top of the user's own screen, so the
-                    // stroke gets a dark outline to stay readable anywhere.
-                    strokeOutline = true
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    message?.let {
-                        Text(
-                            text = it,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } ?: Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = onClose) {
-                        Text("Close", color = Color.White)
+                        val match = Recognizer.recognizeMulti(raw, templates)
+                        val gesture = match?.let { m ->
+                            gestures.firstOrNull { it.name == m.template.name }
+                        }
+                        if (gesture == null) {
+                            message = "No matching gesture"
+                            if (autoCloseOnFail) {
+                                delay(1200)
+                                onClose()
+                            }
+                        } else {
+                            onMatched(gesture)
+                        }
                     }
+                },
+                onCleared = { message = null },
+                onFirstStroke = { drawn = true },
+                // The pad sits on top of the user's own screen, so the
+                // stroke gets a dark outline to stay readable anywhere.
+                strokeOutline = true
+            )
+            // No-match message, centred, over the glass. It never sits
+            // at the bottom of the screen, where it would cover the
+            // home screen's own controls.
+            AnimatedVisibility(
+                visible = message != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                message?.let {
+                    Text(
+                        text = it,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .background(
+                                Color.Black.copy(alpha = 0.45f),
+                                RoundedCornerShape(20.dp)
+                            )
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
                 }
             }
             // Top bar: close on the left, settings on the right. Both sit
@@ -194,7 +231,7 @@ private fun DrawScreen(
                     .fillMaxWidth()
                     .padding(16.dp)
                     .align(Alignment.TopCenter),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
             ) {
                 PadChipButton(
                     icon = Icons.Filled.Close,

@@ -20,6 +20,13 @@ object FlickBrand {
     val TextWhite = Color(0xFFEDF7F7)
     val TextMuted = Color(0xFF9FC0C0)
     val Outline = Color(0xFF2C5055)
+
+    /**
+     * The drawn stroke is fixed, not a setting (v1.0.7): brand cyan at a
+     * fixed width, so every stroke looks the same everywhere in the app.
+     */
+    val StrokeColor = Cyan
+    const val StrokeWidth: Float = 10f
 }
 
 private val FlickColors = darkColorScheme(
