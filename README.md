@@ -5,15 +5,20 @@ local Android app: no backend, no accounts, no data leaves the phone.
 
 ## Features
 
-- **Gesture pad** — draw a stroke on a full-screen canvas. Flick recognises
-  it with a from-scratch implementation of the $1 Unistroke Recognizer
+- **Gesture pad** — draw a gesture on a full-screen canvas. Flick recognises
+  it with a from-scratch implementation of the $N multi-stroke recognizer
   (resample to 64 points, rotate to the indicative angle, scale, translate,
-  path-distance scoring). No ML model, no dependency.
+  path-distance scoring, matched across stroke orderings), generalising the
+  $1 Unistroke Recognizer. Draw a circle, lift, and draw a line to make a
+  Q: multi-stroke gestures work, and single-stroke gestures work exactly as
+  before. No ML model, no dependency.
 - **Gesture library** — record gestures, give them names, attach actions,
-  edit, delete, and test them from the Test pad tab. Stored locally in a
+  edit, delete, and test them from the draw pad. Stored locally in a
   SQLite database on the phone (see the note in `data/Gesture.kt`: v1.0.0
   was built without Gradle, so Room's annotation processing was replaced
   with a plain SQLiteOpenHelper holding the same table and API).
+  Templates are stored as strokes separated by `|`, points as `x,y`;
+  single-stroke templates from earlier versions load back as one stroke.
 - **Actions** — launch an app, open a URL or deep link, flashlight on/off,
   open the camera, media play/pause.
 - **Invisible widget** — a fully transparent home-screen widget. Tap it and
@@ -89,6 +94,10 @@ update the installed app.
 - AccessibilityService-backed actions (optional, with disclosure)
 - Gesture import/export
 - Stroke styling (glow, dashed lines)
+
+Done in v1.0.5: multi-stroke gestures ($N recognizer), app-picker crash
+fix (dedupe by package), minimal dark UI redesign (gesture list + floating
+add button, no bottom tabs).
 
 ## Originality
 

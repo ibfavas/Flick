@@ -12,19 +12,31 @@ data class StrokePoint(val x: Float, val y: Float)
 
 /**
  * The $1 Unistroke Recognizer (Wobbrock et al., 2007), implemented from scratch
- * in pure Kotlin. No ML model, no dependency.
+ * in pure Kotlin, plus its multi-stroke generalisation, the $N Recognizer
+ * (Anthony & Wobbrock, 2010). No ML model, no dependency.
  *
- * Pipeline: resample to [RESAMPLE_COUNT] points, rotate to the indicative
+ * $1 pipeline: resample to [RESAMPLE_COUNT] points, rotate to the indicative
  * angle, scale to a square, translate to the origin, then score candidates by
  * average path distance.
+ *
+ * $N generalisation: a gesture is a list of strokes. To normalise it, the
+ * strokes are joined in order into one path and the $1 pipeline runs on that
+ * path. A template is stored as its raw strokes; at match time every ordering
+ * of its strokes is tried (a circle drawn first and a line second matches
+ * whether the user draws the circle or the line first), and the best
+ * ordering wins. Single-stroke gestures behave exactly as $1.
  */
 object Recognizer {
 
     const val RESAMPLE_COUNT = 64
     private const val SQUARE_SIZE = 250f
     private const val HALF_DIAGONAL = 0.5f * 353.55f // 0.5 * sqrt(250^2 + 250^2)
+    private const val MAX_PERMUTED_STROKES = 4
 
     data class Template(val name: String, val points: List<StrokePoint>)
+
+    /** A multi-stroke template: a name and its drawn strokes (raw points). */
+    data class MultiTemplate(val name: String, val strokes: List<List<StrokePoint>>)
 
     data class Match(val template: Template, val score: Float)
 
@@ -37,6 +49,37 @@ object Recognizer {
         points = scaleTo(points, SQUARE_SIZE)
         points = translateTo(points, StrokePoint(0f, 0f))
         return points
+    }
+
+    /**
+     * Normalize a multi-stroke gesture: join the strokes in order into one
+     * path, then run the $1 pipeline on it. Returns empty if there are not
+     * enough points to form a gesture.
+     */
+    fun normalizeMulti(strokes: List<List<StrokePoint>>): List<StrokePoint> {
+        val joined = strokes.filter { it.size >= 2 }.flatten()
+        if (joined.size < 2) return emptyList()
+        return normalize(joined)
+    }
+
+    /**
+     * Every normalized variant of a template, one per stroke ordering.
+     * With more than [MAX_PERMUTED_STROKES] strokes only the drawn order is
+     * used, to keep the permutation count bounded. Identical variants are
+     * de-duplicated.
+     */
+    fun templateVariants(strokes: List<List<StrokePoint>>): List<List<StrokePoint>> {
+        val usable = strokes.filter { it.size >= 2 }
+        if (usable.isEmpty()) return emptyList()
+        if (usable.size == 1) return listOf(normalize(usable[0]))
+        val orders: List<List<List<StrokePoint>>> =
+            if (usable.size <= MAX_PERMUTED_STROKES) permutations(usable) else listOf(usable)
+        val seen = LinkedHashSet<List<StrokePoint>>()
+        for (order in orders) {
+            val normalized = normalizeMulti(order)
+            if (normalized.isNotEmpty()) seen.add(normalized)
+        }
+        return seen.toList()
     }
 
     /** Score [candidate] against a normalized [template]. Higher is better (0..1). */
@@ -60,6 +103,46 @@ object Recognizer {
             if (best == null || s > best.score) best = Match(template, s)
         }
         return best?.takeIf { it.score >= threshold }
+    }
+
+    /**
+     * Find the best matching multi-stroke template for raw drawn strokes, or
+     * null if none scores above [threshold]. The candidate is normalised in
+     * its drawn order; each template is tried in every stroke ordering.
+     */
+    fun recognizeMulti(
+        rawStrokes: List<List<StrokePoint>>,
+        templates: List<MultiTemplate>,
+        threshold: Float = 0.7f
+    ): Match? {
+        val candidate = normalizeMulti(rawStrokes)
+        if (candidate.isEmpty() || templates.isEmpty()) return null
+        var best: Match? = null
+        for (template in templates) {
+            for (variant in templateVariants(template.strokes)) {
+                val s = score(variant, candidate)
+                if (best == null || s > best.score) {
+                    best = Match(Template(template.name, variant), s)
+                }
+            }
+        }
+        return best?.takeIf { it.score >= threshold }
+    }
+
+    private fun <T> permutations(items: List<T>): List<List<T>> {
+        if (items.size <= 1) return listOf(items)
+        val out = mutableListOf<List<T>>()
+        fun permute(prefix: List<T>, rest: List<T>) {
+            if (rest.isEmpty()) {
+                out.add(prefix)
+                return
+            }
+            for (i in rest.indices) {
+                permute(prefix + rest[i], rest.filterIndexed { idx, _ -> idx != i })
+            }
+        }
+        permute(emptyList(), items)
+        return out
     }
 
     private fun resample(points: List<StrokePoint>, n: Int): List<StrokePoint> {
@@ -170,6 +253,29 @@ object Recognizer {
                 val y = bits[1].toFloatOrNull()
                 if (x == null || y == null) null else StrokePoint(x, y)
             }
+        }
+    }
+
+    /**
+     * Serialize strokes: strokes separated by "|", points by ";" as "x,y".
+     * Example: "10.0,20.0;30.0,40.0|50.0,60.0;70.0,80.0" is two strokes.
+     * Templates store raw drawn strokes; normalisation happens at match time.
+     */
+    fun strokesToString(strokes: List<List<StrokePoint>>): String =
+        strokes.joinToString("|") { pointsToString(it) }
+
+    /**
+     * Parse [strokesToString] output back into strokes. Strings with no "|"
+     * are old single-stroke templates (stored by v1.0.4 as one normalized
+     * stroke) and parse as exactly one stroke, so they keep working.
+     */
+    fun strokesFromString(raw: String): List<List<StrokePoint>> {
+        if (raw.isBlank()) return emptyList()
+        return if ('|' in raw) {
+            raw.split("|").map { pointsFromString(it) }.filter { it.size >= 2 }
+        } else {
+            val single = pointsFromString(raw)
+            if (single.isEmpty()) emptyList() else listOf(single)
         }
     }
 }

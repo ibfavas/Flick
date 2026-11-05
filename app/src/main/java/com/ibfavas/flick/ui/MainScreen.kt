@@ -7,15 +7,19 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,25 +27,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -62,7 +71,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -75,95 +86,153 @@ import com.ibfavas.flick.gesture.Recognizer
 import com.ibfavas.flick.gesture.StrokePoint
 import kotlinx.coroutines.launch
 
-private enum class Tab { LIST, RECORD, TEST, SETTINGS }
+private enum class Screen { LIST, RECORD, TEST, SETTINGS }
 
+/**
+ * Flick, redesigned: minimal and dark. The home screen is the gesture list
+ * plus a floating add button and a settings entry. No bottom navigation.
+ * The draw pad is the centerpiece: a full-screen pad for testing gestures,
+ * and a large pad on the record screen.
+ */
 @Composable
 fun MainScreen(dao: GestureDao, settings: SettingsStore) {
-    var tab by remember { mutableStateOf(Tab.LIST) }
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = tab == Tab.LIST,
-                    onClick = { tab = Tab.LIST },
-                    icon = { Icon(Icons.Filled.List, contentDescription = null) },
-                    label = { Text("Gestures") }
-                )
-                NavigationBarItem(
-                    selected = tab == Tab.RECORD,
-                    onClick = { tab = Tab.RECORD },
-                    icon = { Icon(Icons.Filled.Create, contentDescription = null) },
-                    label = { Text("Record") }
-                )
-                NavigationBarItem(
-                    selected = tab == Tab.TEST,
-                    onClick = { tab = Tab.TEST },
-                    icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                    label = { Text("Test pad") }
-                )
-                NavigationBarItem(
-                    selected = tab == Tab.SETTINGS,
-                    onClick = { tab = Tab.SETTINGS },
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("Settings") }
-                )
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            when (tab) {
-                Tab.LIST -> GestureListScreen(dao)
-                Tab.RECORD -> RecordScreen(dao, settings) { tab = Tab.LIST }
-                Tab.TEST -> TestPadScreen(dao, settings)
-                Tab.SETTINGS -> SettingsScreen(settings)
-            }
-        }
+    var screen by remember { mutableStateOf(Screen.LIST) }
+    BackHandler(enabled = screen != Screen.LIST) { screen = Screen.LIST }
+    when (screen) {
+        Screen.LIST -> GestureListScreen(
+            dao = dao,
+            onRecord = { screen = Screen.RECORD },
+            onTest = { screen = Screen.TEST },
+            onSettings = { screen = Screen.SETTINGS }
+        )
+        Screen.RECORD -> RecordScreen(
+            dao = dao,
+            settings = settings,
+            onBack = { screen = Screen.LIST },
+            onSaved = { screen = Screen.LIST }
+        )
+        Screen.TEST -> TestPadScreen(
+            dao = dao,
+            settings = settings,
+            onBack = { screen = Screen.LIST }
+        )
+        Screen.SETTINGS -> SettingsScreen(
+            settings = settings,
+            onBack = { screen = Screen.LIST }
+        )
     }
 }
 
 // ---------------------------------------------------------------- list
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GestureListScreen(dao: GestureDao) {
+private fun GestureListScreen(
+    dao: GestureDao,
+    onRecord: () -> Unit,
+    onTest: () -> Unit,
+    onSettings: () -> Unit
+) {
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Gesture?>(null) }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Flick", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Draw a gesture to launch things. Add the invisible widget to " +
-                "your home screen, or use the Quick Settings tile.",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-        if (gestures.isEmpty()) {
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onRecord,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add gesture")
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Flick",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onTest,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Icon(Icons.Filled.Create, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Draw a gesture", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "No gestures yet. Go to Record, draw a shape, and attach an action.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 16.dp)
+                "Tap a gesture to edit. Long-press to delete.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(gestures, key = { it.id }) { gesture ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            if (gestures.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "No gestures yet",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Tap + to draw your first gesture, then pick what it should do.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp)
+                ) {
+                    items(gestures, key = { it.id }) { gesture ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = { editing = gesture },
+                                    onLongClick = { deleting = gesture }
+                                )
+                                .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            ActionIcon(gesture)
+                            Spacer(modifier = Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(gesture.name, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    ActionExecutor.describe(gesture),
-                                    style = MaterialTheme.typography.bodySmall
+                                    gesture.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
                                 )
-                            }
-                            IconButton(onClick = { editing = gesture }) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit")
-                            }
-                            IconButton(onClick = { deleting = gesture }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                                Text(
+                                    gestureDescription(gesture),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -205,6 +274,71 @@ private fun GestureListScreen(dao: GestureDao) {
     }
 }
 
+private fun gestureDescription(gesture: Gesture): String {
+    val base = ActionExecutor.describe(gesture)
+    val strokes = Recognizer.strokesFromString(gesture.template).size
+    return if (strokes > 1) "$base, $strokes strokes" else base
+}
+
+// Only material-icons-core is in the build deps (see tools/seeds.txt), so
+// only core icons are used here: Apps, Link, CameraAlt and the flashlight
+// icons live in material-icons-extended and would not compile.
+private fun iconFor(type: ActionType): ImageVector = when (type) {
+    ActionType.LAUNCH_APP -> Icons.AutoMirrored.Filled.ExitToApp
+    ActionType.OPEN_URL -> Icons.Filled.Share
+    ActionType.FLASHLIGHT_ON -> Icons.Filled.Star
+    ActionType.FLASHLIGHT_OFF -> Icons.Filled.Close
+    ActionType.OPEN_CAMERA -> Icons.Filled.Face
+    ActionType.MEDIA_PLAY_PAUSE -> Icons.Filled.PlayArrow
+}
+
+@Composable
+private fun ActionIcon(gesture: Gesture) {
+    val context = LocalContext.current
+    if (gesture.actionType == ActionType.LAUNCH_APP) {
+        var bitmap by remember(gesture.payload) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+        LaunchedEffect(gesture.payload) {
+            bitmap = try {
+                context.packageManager.getApplicationIcon(gesture.payload)
+                    .toBitmap(width = 96, height = 96).asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            )
+        } else {
+            FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp)
+        }
+    } else {
+        FallbackIcon(iconFor(gesture.actionType))
+    }
+}
+
+@Composable
+private fun FallbackIcon(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
 @Composable
 private fun EditGestureDialog(
     gesture: Gesture,
@@ -217,7 +351,7 @@ private fun EditGestureDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit gesture") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -246,21 +380,35 @@ private fun EditGestureDialog(
 private fun RecordScreen(
     dao: GestureDao,
     settings: SettingsStore,
+    onBack: () -> Unit,
     onSaved: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
     val strokeWidth by settings.strokeWidth.collectAsState(initial = SettingsStore.DEFAULT_WIDTH)
     var name by remember { mutableStateOf("") }
-    var captured by remember { mutableStateOf<List<StrokePoint>?>(null) }
+    var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
     var action by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
-            Text("Record a gesture", style = MaterialTheme.typography.headlineMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    "New gesture",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -273,25 +421,30 @@ private fun RecordScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(280.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.outline)
+                    .height(340.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
             ) {
                 DrawPad(
                     strokeColor = Color(strokeColor),
                     strokeWidth = strokeWidth,
-                    modifier = Modifier.fillMaxSize(),
-                    onStrokeFinished = { captured = it }
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    onGestureFinished = { captured = it },
+                    onCleared = { captured = null }
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (captured == null) "Nothing drawn yet"
-                    else "Gesture captured (${captured!!.size} points)",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { captured = null }) { Text("Clear") }
-            }
+            Text(
+                if (captured == null) "Nothing drawn yet"
+                else {
+                    val strokes = captured!!.size
+                    val points = captured!!.sumOf { it.size }
+                    "Captured: $strokes stroke${if (strokes == 1) "" else "s"}, $points points"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
         item {
             Text("What should it do?", style = MaterialTheme.typography.titleMedium)
@@ -302,21 +455,24 @@ private fun RecordScreen(
                 enabled = name.isNotBlank() && captured != null && action.isValid(),
                 onClick = {
                     scope.launch {
-                        val normalized = Recognizer.normalize(captured!!)
                         dao.insert(
                             Gesture(
                                 name = name.trim(),
-                                template = Recognizer.pointsToString(normalized),
+                                template = Recognizer.strokesToString(captured!!),
                                 actionType = action.type,
                                 payload = action.payload
                             )
                         )
                         onSaved()
                     }
-                }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
-                Text("Save gesture")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save gesture", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -429,6 +585,10 @@ private fun AppPickerDialog(
             @Suppress("DEPRECATION")
             pm.queryIntentActivities(main, 0)
         }
+        // Dedupe by package: some apps expose several launcher activities
+        // (Amazon is one), and a repeated package name breaks LazyColumn,
+        // which needs a unique key per item. Keep the first launcher entry
+        // per package, so each package appears exactly once.
         apps = infos.mapNotNull { info ->
             val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
             LaunchableApp(
@@ -436,7 +596,7 @@ private fun AppPickerDialog(
                 packageName = packageName,
                 icon = try { info.loadIcon(pm) } catch (e: Exception) { null }
             )
-        }.sortedBy { it.label.lowercase() }
+        }.distinctBy { it.packageName }.sortedBy { it.label.lowercase() }
     }
 
     AlertDialog(
@@ -484,7 +644,11 @@ private fun AppPickerDialog(
 // ---------------------------------------------------------------- test pad
 
 @Composable
-private fun TestPadScreen(dao: GestureDao, settings: SettingsStore) {
+private fun TestPadScreen(
+    dao: GestureDao,
+    settings: SettingsStore,
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
@@ -492,45 +656,67 @@ private fun TestPadScreen(dao: GestureDao, settings: SettingsStore) {
     var result by remember { mutableStateOf<String?>(null) }
     var matched by remember { mutableStateOf<Gesture?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Test pad", style = MaterialTheme.typography.headlineMedium)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Draw a gesture",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
         Text(
             "Draw here to see what Flick recognises. Nothing runs until you tap Run.",
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 8.dp)
         )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .border(1.dp, MaterialTheme.colorScheme.outline)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
         ) {
             DrawPad(
                 strokeColor = Color(strokeColor),
                 strokeWidth = strokeWidth,
-                modifier = Modifier.fillMaxSize(),
-                onStrokeFinished = { raw ->
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+                onGestureFinished = { raw ->
                     scope.launch {
                         val gestures = dao.getAll()
                         val templates = gestures.map { gesture ->
-                            Recognizer.Template(
+                            Recognizer.MultiTemplate(
                                 gesture.name,
-                                Recognizer.pointsFromString(gesture.template)
+                                Recognizer.strokesFromString(gesture.template)
                             )
                         }
-                        val match = Recognizer.recognize(raw, templates)
+                        val match = Recognizer.recognizeMulti(raw, templates)
                         val gesture = match?.let { m ->
                             gestures.firstOrNull { it.name == m.template.name }
                         }
                         matched = gesture
-                        result = if (gesture == null || match == null) {
+                        result = if (gesture == null) {
                             "No match"
                         } else {
+                            val score = match?.let { (it.score * 100).toInt() }
                             "Matched: ${gesture.name} " +
-                                "(score ${(match.score * 100).toInt()}%) -> " +
+                                (if (score != null) "(score $score%) -> " else "-> ") +
                                 ActionExecutor.describe(gesture)
                         }
                     }
+                },
+                onCleared = {
+                    result = null
+                    matched = null
                 }
             )
         }
@@ -539,10 +725,14 @@ private fun TestPadScreen(dao: GestureDao, settings: SettingsStore) {
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             enabled = matched != null,
-            onClick = { matched?.let { ActionExecutor.execute(context, it) } }
+            onClick = { matched?.let { ActionExecutor.execute(context, it) } },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
         ) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null)
-            Text("Run action")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Run action", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -550,7 +740,7 @@ private fun TestPadScreen(dao: GestureDao, settings: SettingsStore) {
 // ---------------------------------------------------------------- settings
 
 @Composable
-private fun SettingsScreen(settings: SettingsStore) {
+private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val strokeColor by settings.strokeColor.collectAsState(initial = SettingsStore.DEFAULT_COLOR)
@@ -577,11 +767,24 @@ private fun SettingsScreen(settings: SettingsStore) {
     )
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Text("Stroke colour", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 colors.forEach { (value, name) ->

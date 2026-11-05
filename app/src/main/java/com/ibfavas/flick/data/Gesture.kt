@@ -25,7 +25,11 @@ enum class ActionType {
 data class Gesture(
     val id: Long = 0,
     val name: String,
-    /** Normalized template points, serialized by Recognizer.pointsToString. */
+    /** Multi-stroke template, serialized by Recognizer.strokesToString:
+     *  strokes separated by "|", points inside a stroke are "x,y"
+     *  separated by ";". Old single-stroke templates ("x,y;x,y;...") with
+     *  no "|" load back as one stroke, so gestures recorded before
+     *  multi-stroke support keep working. */
     val template: String,
     val actionType: ActionType,
     /** Action payload: package name for LAUNCH_APP, URL for OPEN_URL, empty otherwise. */

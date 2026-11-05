@@ -83,16 +83,16 @@ private fun DrawScreen(
             strokeColor = Color(strokeColor),
             strokeWidth = strokeWidth,
             modifier = Modifier.fillMaxSize(),
-            onStrokeFinished = { raw: List<StrokePoint> ->
+            onGestureFinished = { raw: List<List<StrokePoint>> ->
                 scope.launch {
                     val gestures = dao.getAll()
                     val templates = gestures.map { gesture ->
-                        Recognizer.Template(
+                        Recognizer.MultiTemplate(
                             gesture.name,
-                            Recognizer.pointsFromString(gesture.template)
+                            Recognizer.strokesFromString(gesture.template)
                         )
                     }
-                    val match = Recognizer.recognize(raw, templates)
+                    val match = Recognizer.recognizeMulti(raw, templates)
                     val gesture = match?.let { m ->
                         gestures.firstOrNull { it.name == m.template.name }
                     }
@@ -102,7 +102,8 @@ private fun DrawScreen(
                         onMatched(gesture)
                     }
                 }
-            }
+            },
+            onCleared = { message = null }
         )
         Column(
             modifier = Modifier
