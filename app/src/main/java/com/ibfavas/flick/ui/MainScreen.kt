@@ -410,10 +410,10 @@ private fun GestureListScreen(
                 .padding(top = 12.dp)
         ) {
             // Home page (v1.0.13): wordmark header with a small
-            // settings gear, count line, category tabs (no "All" tab),
-            // cards, and the + Add button. The gear is the discoverable
-            // way into Settings; the overlay pad's gear and the detail
-            // sheet's Settings entry still work too.
+            // support mug and settings gear, count line, category tabs
+            // (no "All" tab), cards, and the + Add button. The gear is
+            // the discoverable way into Settings; the overlay pad's gear
+            // and the detail sheet's Settings entry still work too.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
                     painter = painterResource(R.drawable.flick_wordmark),
@@ -422,6 +422,19 @@ private fun GestureListScreen(
                     modifier = Modifier.height(34.dp)
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://buymeacoffee.com/flickapp")
+                        )
+                    )
+                }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_mug),
+                        contentDescription = "Buy me a coffee"
+                    )
+                }
                 IconButton(onClick = onSettings) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings")
                 }
