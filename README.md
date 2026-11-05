@@ -114,3 +114,8 @@ new logo.
 Flick is 100% original code written for this project. It shares a concept
 with other gesture launchers (draw to launch) but copies no code, assets,
 branding, or resources from any other app.
+
+## License
+
+Flick is licensed under the Apache License 2.0. See [LICENSE](LICENSE)
+for the full text.
