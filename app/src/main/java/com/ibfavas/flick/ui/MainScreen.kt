@@ -57,6 +57,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -82,6 +83,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -116,6 +118,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -125,6 +128,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -974,6 +978,62 @@ private fun gestureDescription(gesture: Gesture, appLabel: String? = null): Stri
 
 // The target icons live in ui/TargetIcon.kt (shared with the pad).
 
+/**
+ * The gesture name field (v1.2.1): an underline field, no box, no
+ * border. Centred text over a single thin grey underline, with a small
+ * grey label centred above it. [fieldFraction] is how wide the text
+ * field is relative to its parent: the record form centres it at 70%,
+ * the (already narrow) edit dialog uses the full width. Replaces the
+ * v1.2.0 squircle box, which read as a stretched capsule on a field
+ * this wide.
+ */
+@Composable
+private fun UnderlineNameField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    fieldFraction: Float,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = FlickBrand.TextMuted
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleLarge.copy(
+                color = FlickBrand.TextWhite,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            ),
+            cursorBrush = SolidColor(accentColor()),
+            modifier = Modifier.fillMaxWidth(fieldFraction)
+        ) { innerTextField ->
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    innerTextField()
+                }
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = FlickBrand.Outline
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun EditGestureDialog(
     gesture: Gesture,
@@ -993,13 +1053,14 @@ private fun EditGestureDialog(
         title = { Text("Edit gesture") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
+                UnderlineNameField(
                     value = name,
                     onValueChange = {
                         name = it
                         nameAutoFilled = false
                     },
-                    label = { Text("Name") },
+                    label = "Name",
+                    fieldFraction = 1f,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1283,17 +1344,19 @@ private fun RecordScreen(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
-            // The name field is a squircle box (v1.2.0) and sits
-            // above the sample boxes. Its text is filled in from
-            // the app the user picks, and stays editable after.
-            OutlinedTextField(
+            // The name field is an underline field (v1.2.1), centred
+            // at 70% width: no box, no border, just centred text over
+            // a thin grey underline, with the label centred above it.
+            // Its text is filled in from the app the user picks, and
+            // stays editable after.
+            UnderlineNameField(
                 value = name,
                 onValueChange = {
                     name = it
                     nameAutoFilled = false
                 },
-                label = { Text("Gesture name") },
-                shape = SquircleShape,
+                label = "Gesture name",
+                fieldFraction = 0.7f,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1607,11 +1670,18 @@ private fun ActionPicker(
             onClick = { onChange(ActionSelection(ActionType.LAUNCH_APP, action.payload)) }
         )
         if (action.type == ActionType.LAUNCH_APP) {
-            OutlinedButton(
-                onClick = { showAppPicker = true },
-                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
+            // Centred like the name field (v1.2.1): narrower than
+            // the screen, centred horizontally.
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
+                OutlinedButton(
+                    onClick = { showAppPicker = true },
+                    modifier = Modifier.fillMaxWidth(0.7f)
+                ) {
+                    Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
+                }
             }
         }
         }

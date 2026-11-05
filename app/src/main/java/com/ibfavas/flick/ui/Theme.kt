@@ -1,16 +1,10 @@
 package com.ibfavas.flick.ui
 
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.pow
-import kotlin.math.sign
-import kotlin.math.sin
 
 /**
  * Flick's brand, AMOLED edition (v1.0.8): pitch black everywhere, white
@@ -61,34 +55,6 @@ val LocalAccent = compositionLocalOf { FlickBrand.Cyan }
 /** Read the current app accent colour inside a composable. */
 @Composable
 fun accentColor(): Color = LocalAccent.current
-
-/**
- * A squircle (superellipse) shape (v1.2.0): the gesture name field's
- * box. A rounded rectangle with a large corner radius looks close,
- * but a true superellipse has the flatter sides and tighter corners
- * of an iOS-style squircle. Exponent 4 gives the classic shape.
- */
-val SquircleShape = GenericShape { size, _ ->
-    val w = size.width
-    val h = size.height
-    val n = 4f
-    val steps = 64
-    var first = true
-    for (i in 0..steps) {
-        val t = (2f * Math.PI * i / steps).toFloat()
-        val c = cos(t)
-        val s = sin(t)
-        val x = w / 2f + (w / 2f) * sign(c) * abs(c).pow(2f / n)
-        val y = h / 2f + (h / 2f) * sign(s) * abs(s).pow(2f / n)
-        if (first) {
-            moveTo(x, y)
-            first = false
-        } else {
-            lineTo(x, y)
-        }
-    }
-    close()
-}
 
 private fun flickColors(accent: Color) = darkColorScheme(
     primary = accent,

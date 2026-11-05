@@ -39,9 +39,16 @@
             </intent-filter>
         </activity>
 
+        <!-- The drawing pad must never appear in recents (v1.2.1):
+             excludeFromRecents keeps the pad out of the recents list
+             while the pad itself still works normally. NOT noHistory:
+             the pad must survive the user switching apps mid-draw and
+             coming back. The launch intents below also carry
+             FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS as belt and braces. -->
         <activity
             android:name=".DrawActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
             android:theme="@style/Theme.Flick.Draw" />
 
         <!-- Diagnostic crash screen (v1.0.2): shows the captured stack
