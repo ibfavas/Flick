@@ -115,12 +115,10 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -190,25 +188,45 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     // + action). The drawn samples and the tab the user came from are
     // held here so step 2 knows them, and "Add another sample" can go
     // back to step 1. recordSamples is only non-empty while a draft is
-    // in progress, which is also how DRAW knows whether back should
-    // return to RECORD (adding a sample) or to LIST (a fresh draw).
+    // in progress.
     var recordCategory by remember { mutableStateOf<GestureCategory?>(null) }
     var recordSamples by remember {
         mutableStateOf<List<List<List<StrokePoint>>>>(emptyList())
+    }
+    // Where back from DRAW goes (v1.0.11): DRAW is entered from RECORD
+    // in two ways, and they must not be confused, or back loops between
+    // the two screens forever. True only when RECORD sent the user to
+    // DRAW to append one more sample ("Add another sample"): back then
+    // returns to RECORD. False in the fresh flow (LIST -> DRAW -> RECORD
+    // and RECORD -> DRAW to redraw): back then leaves the flow for the
+    // home list, abandoning the draft.
+    var drawReturnToRecord by remember { mutableStateOf(false) }
+
+    fun exitDrawFlow() {
+        recordSamples = emptyList()
+        recordCategory = null
+        drawReturnToRecord = false
+        screen = Screen.LIST
+    }
+
+    fun backFromDraw() {
+        if (drawReturnToRecord) {
+            screen = Screen.RECORD
+        } else {
+            exitDrawFlow()
+        }
+    }
+
+    fun backFromRecord() {
+        drawReturnToRecord = false
+        screen = Screen.DRAW
     }
 
     BackHandler(enabled = addingSampleFor != null || screen != Screen.LIST) {
         when {
             addingSampleFor != null -> addingSampleFor = null
-            screen == Screen.DRAW -> {
-                if (recordSamples.isNotEmpty()) {
-                    screen = Screen.RECORD
-                } else {
-                    recordCategory = null
-                    screen = Screen.LIST
-                }
-            }
-            screen == Screen.RECORD -> screen = Screen.DRAW
+            screen == Screen.DRAW -> backFromDraw()
+            screen == Screen.RECORD -> backFromRecord()
             else -> screen = Screen.LIST
         }
     }
@@ -233,6 +251,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
             if (addingSampleFor != null) {
                 AddSampleScreen(
                     dao = dao,
+                    settings = settings,
                     gesture = addingSampleFor!!,
                     onBack = { addingSampleFor = null },
                     onSaved = { addingSampleFor = null }
@@ -255,9 +274,9 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                             onAdd = { category ->
                                 recordCategory = category
                                 recordSamples = emptyList()
+                                drawReturnToRecord = false
                                 screen = Screen.DRAW
                             },
-                            onTest = { screen = Screen.TEST },
                             onSettings = { screen = Screen.SETTINGS },
                             onAddSample = { gesture ->
                                 addingSampleFor = gesture
@@ -266,14 +285,8 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                         Screen.DRAW -> DrawGestureScreen(
                             category = recordCategory,
                             existingSamples = recordSamples,
-                            onBack = {
-                                if (recordSamples.isNotEmpty()) {
-                                    screen = Screen.RECORD
-                                } else {
-                                    recordCategory = null
-                                    screen = Screen.LIST
-                                }
-                            },
+                            settings = settings,
+                            onBack = { backFromDraw() },
                             onDone = { allSamples ->
                                 recordSamples = allSamples
                                 screen = Screen.RECORD
@@ -284,15 +297,20 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                             settings = settings,
                             initialCategory = recordCategory,
                             initialSamples = recordSamples,
-                            onAddSample = { screen = Screen.DRAW },
-                            onRedraw = {
-                                recordSamples = emptyList()
+                            onAddSample = {
+                                drawReturnToRecord = true
                                 screen = Screen.DRAW
                             },
-                            onBack = { screen = Screen.DRAW },
+                            onRedraw = {
+                                recordSamples = emptyList()
+                                drawReturnToRecord = false
+                                screen = Screen.DRAW
+                            },
+                            onBack = { backFromRecord() },
                             onSaved = {
                                 recordSamples = emptyList()
                                 recordCategory = null
+                                drawReturnToRecord = false
                                 screen = Screen.LIST
                             }
                         )
@@ -304,7 +322,8 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                         Screen.SETTINGS -> SettingsScreen(
                             settings = settings,
                             dao = dao,
-                            onBack = { screen = Screen.LIST }
+                            onBack = { screen = Screen.LIST },
+                            onTest = { screen = Screen.TEST }
                         )
                     }
                 }
@@ -321,7 +340,6 @@ private fun GestureListScreen(
     dao: GestureDao,
     settings: SettingsStore,
     onAdd: (GestureCategory) -> Unit,
-    onTest: () -> Unit,
     onSettings: () -> Unit,
     onAddSample: (Gesture) -> Unit
 ) {
@@ -377,35 +395,17 @@ private fun GestureListScreen(
                 .padding(horizontal = 20.dp)
                 .padding(top = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painter = painterResource(R.drawable.flick_wordmark),
-                    contentDescription = "Flick",
-                    contentScale = ContentScale.FillHeight,
-                    modifier = Modifier.height(34.dp)
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onTest,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .pressScale()
-            ) {
-                Icon(Icons.Filled.Create, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Draw a gesture", style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Tap a gesture to edit. Long-press to delete.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            // Clean home page (v1.0.11): the list itself only — wordmark
+            // header, count line, tabs, cards, and the + Add button.
+            // No settings gear, no big "Draw a gesture" button, no hint
+            // text. Settings is reached from the overlay pad's gear and
+            // from the gesture detail sheet; the test pad lives in
+            // Settings.
+            Image(
+                painter = painterResource(R.drawable.flick_wordmark),
+                contentDescription = "Flick",
+                contentScale = ContentScale.FillHeight,
+                modifier = Modifier.height(34.dp)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -601,6 +601,10 @@ private fun GestureListScreen(
                         live,
                         Feedback(vibrateOnRun, soundOnRun)
                     )
+                },
+                onSettings = {
+                    detail = null
+                    onSettings()
                 }
             )
         }
@@ -737,7 +741,9 @@ private fun appLabel(packageName: String): String? {
  * on a card, an action row (edit, enable/disable, delete, test), and
  * the name + description below. Edit opens the edit dialog, the toggle
  * enables/disables the gesture, delete asks for confirmation, and
- * test runs the gesture's action.
+ * test runs the gesture's action. A Settings button at the bottom is
+ * one of the two ways into Settings now that the home page has no
+ * gear (v1.0.11); the other is the gear on the overlay pad.
  */
 @Composable
 private fun GestureDetailSheet(
@@ -745,7 +751,8 @@ private fun GestureDetailSheet(
     onEdit: () -> Unit,
     onToggleEnabled: () -> Unit,
     onDelete: () -> Unit,
-    onTest: () -> Unit
+    onTest: () -> Unit,
+    onSettings: () -> Unit
 ) {
     val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
         appLabel(gesture.payload)
@@ -840,6 +847,15 @@ private fun GestureDetailSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(
+            onClick = onSettings,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Settings")
+        }
     }
 }
 
@@ -910,73 +926,7 @@ private fun gestureDescription(gesture: Gesture, appLabel: String? = null): Stri
     return text
 }
 
-// Only material-icons-core is in the build deps (see tools/seeds.txt), so
-// only core icons are used here: Apps, Link, CameraAlt and the flashlight
-// icons live in material-icons-extended and would not compile. Wi-Fi and
-// Bluetooth have no core icon; both open a system panel, so the gear is
-// honest for them.
-private fun iconFor(type: ActionType): ImageVector = when (type) {
-    ActionType.LAUNCH_APP -> Icons.AutoMirrored.Filled.ExitToApp
-    ActionType.OPEN_URL -> Icons.Filled.Share
-    ActionType.FLASHLIGHT_ON -> Icons.Filled.Star
-    ActionType.FLASHLIGHT_OFF -> Icons.Filled.Close
-    ActionType.OPEN_CAMERA -> Icons.Filled.Face
-    ActionType.MEDIA_PLAY_PAUSE -> Icons.Filled.PlayArrow
-    ActionType.CALL_CONTACT -> Icons.Filled.Call
-    ActionType.LOCK_SCREEN -> Icons.Filled.Lock
-    ActionType.TAKE_SCREENSHOT -> Icons.Filled.Create
-    ActionType.TOGGLE_WIFI -> Icons.Filled.Settings
-    ActionType.TOGGLE_BLUETOOTH -> Icons.Filled.Settings
-    ActionType.TOGGLE_DND -> Icons.Filled.Notifications
-    ActionType.RUN_FLOW -> Icons.AutoMirrored.Filled.List
-}
-
-@Composable
-private fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
-    val context = LocalContext.current
-    if (gesture.actionType == ActionType.LAUNCH_APP) {
-        var bitmap by remember(gesture.payload) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-        LaunchedEffect(gesture.payload) {
-            bitmap = try {
-                context.packageManager.getApplicationIcon(gesture.payload)
-                    .toBitmap(width = 96, height = 96).asImageBitmap()
-            } catch (e: Exception) {
-                null
-            }
-        }
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap!!,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(10.dp))
-            )
-        } else {
-            FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp, size, iconSize)
-        }
-    } else {
-        FallbackIcon(iconFor(gesture.actionType), size, iconSize)
-    }
-}
-
-@Composable
-private fun FallbackIcon(icon: ImageVector, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(iconSize)
-        )
-    }
-}
+// The target icons live in ui/TargetIcon.kt (shared with the pad).
 
 @Composable
 private fun EditGestureDialog(
@@ -1051,9 +1001,16 @@ private fun EditGestureDialog(
 private fun DrawGestureScreen(
     category: GestureCategory?,
     existingSamples: List<List<List<StrokePoint>>>,
+    settings: SettingsStore,
     onBack: () -> Unit,
     onDone: (List<List<List<StrokePoint>>>) -> Unit
 ) {
+    val strokeColorArgb by settings.strokeColor.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
+    )
+    val strokeWidthPx by settings.strokeWidth.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
+    )
     var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var padKey by remember { mutableStateOf(0) }
@@ -1114,7 +1071,9 @@ private fun DrawGestureScreen(
                         modifier = Modifier.fillMaxSize().padding(8.dp),
                         onGestureFinished = { captured = it },
                         onCleared = { captured = null },
-                        onFirstStroke = { drawn = true }
+                        onFirstStroke = { drawn = true },
+                        strokeColor = Color(strokeColorArgb),
+                        strokeWidth = strokeWidthPx
                     )
                 }
                 // Centred hint while nothing is drawn yet. It has no
@@ -1365,11 +1324,18 @@ private fun RecordScreen(
 @Composable
 private fun AddSampleScreen(
     dao: GestureDao,
+    settings: SettingsStore,
     gesture: Gesture,
     onBack: () -> Unit,
     onSaved: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val strokeColorArgb by settings.strokeColor.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
+    )
+    val strokeWidthPx by settings.strokeWidth.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
+    )
     var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
     val current = gesture.sampleCount()
 
@@ -1420,7 +1386,9 @@ private fun AddSampleScreen(
                 DrawPad(
                     modifier = Modifier.fillMaxSize().padding(8.dp),
                     onGestureFinished = { captured = it },
-                    onCleared = { captured = null }
+                    onCleared = { captured = null },
+                    strokeColor = Color(strokeColorArgb),
+                    strokeWidth = strokeWidthPx
                 )
             }
             Text(
@@ -2006,6 +1974,12 @@ private fun TestPadScreen(
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
     )
+    val strokeColorArgb by settings.strokeColor.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
+    )
+    val strokeWidthPx by settings.strokeWidth.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
+    )
     var result by remember { mutableStateOf<String?>(null) }
     var matched by remember { mutableStateOf<Gesture?>(null) }
 
@@ -2071,7 +2045,9 @@ private fun TestPadScreen(
                 onCleared = {
                     result = null
                     matched = null
-                }
+                },
+                strokeColor = Color(strokeColorArgb),
+                strokeWidth = strokeWidthPx
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -2113,20 +2089,28 @@ private fun TestPadScreen(
  * on a dark surface.
  */
 @Composable
-private fun SettingsScreen(settings: SettingsStore, dao: GestureDao, onBack: () -> Unit) {
+private fun SettingsScreen(
+    settings: SettingsStore,
+    dao: GestureDao,
+    onBack: () -> Unit,
+    onTest: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
-    val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
-        initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
-    )
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
     )
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
+    )
+    val strokeWidthPx by settings.strokeWidth.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
+    )
+    val strokeColorArgb by settings.strokeColor.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
     // Backup result, shown under the buttons until the next backup action.
     var backupMessage by remember { mutableStateOf<String?>(null) }
@@ -2316,26 +2300,57 @@ private fun SettingsScreen(settings: SettingsStore, dao: GestureDao, onBack: () 
                         "Disabled while multi-stroke is on — the overlay stays open once you start drawing.",
                     onChange = { scope.launch { settings.setOverlayTimeout(it.toInt()) } }
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Auto close on fail",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = FlickBrand.TextWhite
-                        )
-                        Text(
-                            "Close the pad after a gesture that matched nothing.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        }
+        item {
+            // Stroke (v1.0.11): width slider and colour presets. The
+            // stroke is 14px cyan unless the user changes it here.
+            SettingsSection(title = "Stroke") {
+                SettingSlider(
+                    label = "Stroke width",
+                    valueText = "${strokeWidthPx.toInt()}px",
+                    value = strokeWidthPx,
+                    range = SettingsStore.MIN_STROKE_WIDTH_PX..SettingsStore.MAX_STROKE_WIDTH_PX,
+                    steps = (SettingsStore.MAX_STROKE_WIDTH_PX - SettingsStore.MIN_STROKE_WIDTH_PX).toInt() - 1,
+                    description = "How thick the drawn stroke is on every pad.",
+                    onChange = { scope.launch { settings.setStrokeWidth(it) } }
+                )
+                Text(
+                    "Stroke colour",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = FlickBrand.TextWhite
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsStore.STROKE_COLOR_PRESETS.forEach { argb ->
+                        StrokeSwatch(
+                            color = Color(argb),
+                            selected = argb == strokeColorArgb,
+                            onClick = { scope.launch { settings.setStrokeColor(argb) } }
                         )
                     }
-                    Switch(
-                        checked = autoCloseOnFail,
-                        onCheckedChange = { scope.launch { settings.setAutoCloseOnFail(it) } }
-                    )
+                }
+                Text(
+                    "The colour of the stroke you draw. Gesture cards in the list always stay cyan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        item {
+            // The test pad moved here (v1.0.11): the home page has no
+            // "Draw a gesture" button any more, so this is the way in.
+            SettingsSection(title = "Test") {
+                Text(
+                    "Draw a gesture to see what Flick recognises, with the match confidence. " +
+                        "Nothing runs until you tap Run.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                OutlinedButton(
+                    onClick = onTest,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open test pad")
                 }
             }
         }
@@ -2546,6 +2561,23 @@ private fun SettingSwitch(
         }
         Switch(checked = checked, onCheckedChange = onChange)
     }
+}
+
+/** One stroke colour swatch: a filled circle, ringed in cyan when selected. */
+@Composable
+private fun StrokeSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) FlickBrand.Cyan else FlickBrand.Outline,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+    )
 }
 
 /** A labelled slider with a value chip and a description underneath. */

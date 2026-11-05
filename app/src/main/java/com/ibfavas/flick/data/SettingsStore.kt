@@ -16,12 +16,12 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 /**
  * App settings stored in DataStore Preferences.
  *
- * v1.0.7: the stroke colour and width settings are gone. The stroke is
- * fixed brand cyan at a fixed width (see FlickBrand.StrokeColor and
- * FlickBrand.StrokeWidth in ui/Theme.kt) — there is nothing to configure.
- * What remains is the drawing overlay: how frosted it is, how long it
- * waits before closing on its own, and whether it closes after a failed
- * gesture. Old stroke keys, if present on a device, are simply ignored.
+ * v1.0.11: the stroke is configurable again (v1.0.7 removed these
+ * settings; the user changed his mind and asked for them back). The
+ * stroke width is a slider and the colour is one of a small set of
+ * presets, cyan by default. "Auto close on fail" is gone: on the
+ * overlay pad a gesture that matches nothing now always closes the
+ * pad at once, with no message and no setting for it.
  */
 class SettingsStore(private val context: Context) {
 
@@ -29,9 +29,10 @@ class SettingsStore(private val context: Context) {
         private val OVERLAY_BLUR = intPreferencesKey("overlay_blur_px")
         private val OVERLAY_OPACITY = floatPreferencesKey("overlay_opacity")
         private val OVERLAY_TIMEOUT = intPreferencesKey("overlay_timeout_s")
-        private val AUTO_CLOSE_ON_FAIL = booleanPreferencesKey("auto_close_on_fail")
         private val VIBRATE_ON_RUN = booleanPreferencesKey("vibrate_on_run")
         private val SOUND_ON_RUN = booleanPreferencesKey("sound_on_run")
+        private val STROKE_WIDTH = floatPreferencesKey("stroke_width_px")
+        private val STROKE_COLOR = intPreferencesKey("stroke_color_argb")
 
         /** Background blur behind the pad, in px (Android 12 and up). */
         const val DEFAULT_BLUR_PX: Int = 25
@@ -48,22 +49,34 @@ class SettingsStore(private val context: Context) {
         const val DEFAULT_TIMEOUT_S: Int = 7
         const val MAX_TIMEOUT_S: Int = 30
 
-        /** Close the pad after a gesture that matched nothing. */
-        const val DEFAULT_AUTO_CLOSE_ON_FAIL: Boolean = true
-
         /** Short vibration when a gesture is recognised and runs. */
         const val DEFAULT_VIBRATE_ON_RUN: Boolean = true
 
         /** Short beep when a gesture is recognised and runs. */
         const val DEFAULT_SOUND_ON_RUN: Boolean = false
+
+        /** Drawn stroke thickness, in px. */
+        const val DEFAULT_STROKE_WIDTH_PX: Float = 14f
+        const val MIN_STROKE_WIDTH_PX: Float = 4f
+        const val MAX_STROKE_WIDTH_PX: Float = 24f
+
+        /** Drawn stroke colour, as an ARGB int. Cyan by default. */
+        const val DEFAULT_STROKE_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
+
+        /** Stroke colour presets offered in Settings, as ARGB ints. */
+        val STROKE_COLOR_PRESETS: List<Int> = listOf(
+            0xFF00E5FF, 0xFFFFFFFF, 0xFFFFEB3B,
+            0xFF69F0AE, 0xFFFF80AB, 0xFFFFAB40
+        ).map { it.toInt() }
     }
 
     val overlayBlur: Flow<Int> = context.dataStore.data.map { it[OVERLAY_BLUR] ?: DEFAULT_BLUR_PX }
     val overlayOpacity: Flow<Float> = context.dataStore.data.map { it[OVERLAY_OPACITY] ?: DEFAULT_OPACITY }
     val overlayTimeout: Flow<Int> = context.dataStore.data.map { it[OVERLAY_TIMEOUT] ?: DEFAULT_TIMEOUT_S }
-    val autoCloseOnFail: Flow<Boolean> = context.dataStore.data.map { it[AUTO_CLOSE_ON_FAIL] ?: DEFAULT_AUTO_CLOSE_ON_FAIL }
     val vibrateOnRun: Flow<Boolean> = context.dataStore.data.map { it[VIBRATE_ON_RUN] ?: DEFAULT_VIBRATE_ON_RUN }
     val soundOnRun: Flow<Boolean> = context.dataStore.data.map { it[SOUND_ON_RUN] ?: DEFAULT_SOUND_ON_RUN }
+    val strokeWidth: Flow<Float> = context.dataStore.data.map { it[STROKE_WIDTH] ?: DEFAULT_STROKE_WIDTH_PX }
+    val strokeColor: Flow<Int> = context.dataStore.data.map { it[STROKE_COLOR] ?: DEFAULT_STROKE_COLOR_ARGB }
 
     suspend fun setOverlayBlur(px: Int) {
         context.dataStore.edit { it[OVERLAY_BLUR] = px.coerceIn(0, MAX_BLUR_PX) }
@@ -77,15 +90,21 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[OVERLAY_TIMEOUT] = seconds.coerceIn(0, MAX_TIMEOUT_S) }
     }
 
-    suspend fun setAutoCloseOnFail(enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_CLOSE_ON_FAIL] = enabled }
-    }
-
     suspend fun setVibrateOnRun(enabled: Boolean) {
         context.dataStore.edit { it[VIBRATE_ON_RUN] = enabled }
     }
 
     suspend fun setSoundOnRun(enabled: Boolean) {
         context.dataStore.edit { it[SOUND_ON_RUN] = enabled }
+    }
+
+    suspend fun setStrokeWidth(px: Float) {
+        context.dataStore.edit {
+            it[STROKE_WIDTH] = px.coerceIn(MIN_STROKE_WIDTH_PX, MAX_STROKE_WIDTH_PX)
+        }
+    }
+
+    suspend fun setStrokeColor(argb: Int) {
+        context.dataStore.edit { it[STROKE_COLOR] = argb }
     }
 }

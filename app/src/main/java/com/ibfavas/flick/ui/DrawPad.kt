@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -46,6 +46,34 @@ private const val STROKE_TIMEOUT_MS = 900L
 private const val HINT_VISIBLE_MS = 2000L
 
 /**
+ * Smooth a sampled stroke into a fluid curve. Raw touch points arrive
+ * in straight segments, which look jagged; this draws a quadratic
+ * Bezier through the midpoint of each pair of samples, so the curve
+ * bends through the points instead of cornering on them. A single
+ * point becomes a tiny round dot.
+ */
+private fun smoothedPath(points: List<Offset>): Path {
+    val path = Path()
+    if (points.isEmpty()) return path
+    if (points.size == 1) {
+        // A dot: a sub-pixel line with a round cap renders as a circle.
+        path.moveTo(points[0].x, points[0].y)
+        path.lineTo(points[0].x + 0.5f, points[0].y)
+        return path
+    }
+    path.moveTo(points[0].x, points[0].y)
+    var prev = points[0]
+    for (i in 1 until points.size) {
+        val p = points[i]
+        val mid = Offset((prev.x + p.x) / 2f, (prev.y + p.y) / 2f)
+        path.quadraticTo(prev.x, prev.y, mid.x, mid.y)
+        prev = p
+    }
+    path.lineTo(points.last().x, points.last().y)
+    return path
+}
+
+/**
  * A drawing pad that captures multi-stroke gestures. Draw a stroke, lift,
  * and draw again to add another stroke to the same gesture, just like
  * drawing a circle and then a line to make a Q. When no new stroke starts
@@ -53,18 +81,25 @@ private const val HINT_VISIBLE_MS = 2000L
  * receives all strokes. Done finishes immediately, Clear wipes the pad.
  * Every stroke drawn so far stays visible.
  *
- * The stroke is fixed brand cyan at a fixed width (v1.0.7): there is no
- * colour or width setting any more, so every stroke looks the same.
+ * Drawing is smooth (v1.0.11): the raw touch samples, including the
+ * MotionEvent historical points between them, are drawn as a quadratic
+ * Bezier curve with round caps and joins, so the stroke bends fluidly
+ * while the finger moves instead of showing straight segments or
+ * jagged corners. Finished strokes keep a cached smoothed [Path];
+ * only the live stroke is rebuilt as the finger moves.
+ *
+ * The stroke colour and width come from Settings (cyan, 14px by
+ * default). The Done/Clear chips are part of the pad's chrome in the
+ * app, but the transparent overlay pad hides them ([showControls] =
+ * false): there a gesture is recognised automatically when the timer
+ * expires, so the buttons have nothing to do.
  *
  * The pad keeps its chrome minimal: a short "Draw a gesture" hint that
  * fades away after a couple of seconds, and small Done/Clear chips that
  * only appear while a stroke is actually on screen. There is no
  * persistent bar explaining multi-stroke; the behaviour is the same.
- *
- * Performance: finished strokes keep a cached [Path]; only the live stroke
- * is extended as the finger moves. Rebuilding every stroke's Path on every
- * frame made the pad stutter on long gestures.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DrawPad(
     modifier: Modifier = Modifier,
@@ -77,10 +112,14 @@ fun DrawPad(
      * background. Used by the frosted-glass pad, which sits on top of
      * whatever the user was doing.
      */
-    strokeOutline: Boolean = false
+    strokeOutline: Boolean = false,
+    /** The stroke colour, from Settings (cyan by default). */
+    strokeColor: Color = FlickBrand.StrokeColor,
+    /** The stroke width in px, from Settings (14px by default). */
+    strokeWidth: Float = FlickBrand.StrokeWidth,
+    /** Show the Done/Clear chips. False on the overlay pad. */
+    showControls: Boolean = true
 ) {
-    val strokeColor = FlickBrand.StrokeColor
-    val strokeWidth = FlickBrand.StrokeWidth
     var strokes by remember { mutableStateOf(listOf<List<Offset>>()) }
     var currentStroke by remember { mutableStateOf(listOf<Offset>()) }
     val strokePaths = remember { mutableStateListOf<Path>() }
@@ -144,17 +183,23 @@ fun DrawPad(
                             timerJob?.cancel()
                             timerJob = null
                             currentStroke = listOf(offset)
-                            currentPath = Path().apply { moveTo(offset.x, offset.y) }
+                            currentPath = smoothedPath(currentStroke)
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            currentStroke = currentStroke + change.position
-                            currentPath?.lineTo(change.position.x, change.position.y)
+                            // Historical points are the samples the
+                            // system recorded between this event and
+                            // the last one: without them the curve
+                            // jumps in straight steps on fast strokes.
+                            val points = change.historical.map { it.position } +
+                                change.position
+                            currentStroke = currentStroke + points
+                            currentPath = smoothedPath(currentStroke)
                         },
                         onDragEnd = {
                             if (currentStroke.size >= 2 && strokeLength(currentStroke) > 4f) {
                                 strokes = strokes + listOf(currentStroke)
-                                currentPath?.let { strokePaths.add(it) }
+                                strokePaths.add(smoothedPath(currentStroke))
                             }
                             currentStroke = emptyList()
                             currentPath = null
@@ -192,6 +237,20 @@ fun DrawPad(
                 for (path in strokePaths) drawStroke(path)
                 if (currentStroke.size >= 2) {
                     currentPath?.let { drawStroke(it) }
+                } else if (currentStroke.size == 1) {
+                    // A lone touch point: show the dot under the finger.
+                    if (strokeOutline) {
+                        drawCircle(
+                            Color.Black.copy(alpha = 0.35f),
+                            radius = (strokeWidth + 6f) / 2f,
+                            center = currentStroke[0]
+                        )
+                    }
+                    drawCircle(
+                        strokeColor,
+                        radius = strokeWidth / 2f,
+                        center = currentStroke[0]
+                    )
                 }
             }
         }
@@ -218,9 +277,12 @@ fun DrawPad(
             )
         }
         // Done and Clear only exist while there is something to finish
-        // or clear. They sit above the hint's spot, so the two never overlap.
+        // or clear, and only where they are wanted: the overlay pad
+        // (showControls = false) recognises automatically, so it has
+        // no buttons at all. They sit above the hint's spot, so the
+        // two never overlap.
         AnimatedVisibility(
-            visible = strokes.isNotEmpty(),
+            visible = showControls && strokes.isNotEmpty(),
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier

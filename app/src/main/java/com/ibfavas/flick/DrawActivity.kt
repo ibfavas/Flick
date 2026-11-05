@@ -8,10 +8,14 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,11 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
@@ -59,6 +68,7 @@ import com.ibfavas.flick.data.GestureDao
 import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.gesture.Recognizer
 import com.ibfavas.flick.gesture.StrokePoint
+import com.ibfavas.flick.ui.ActionIcon
 import com.ibfavas.flick.ui.DrawPad
 import com.ibfavas.flick.ui.FlickBrand
 import com.ibfavas.flick.ui.FlickTheme
@@ -69,15 +79,17 @@ import kotlinx.coroutines.launch
  * Frosted-glass full-screen activity launched by the invisible widget and
  * the Quick Settings tile. The pad is glass, not invisible: the screen
  * the user was on shows through faintly, blurred, under a semi-transparent
- * black tint, so the pad is clearly a surface of its own. The stroke is
- * brand cyan with a dark outline, so it reads over any background.
+ * black tint, so the pad is clearly a surface of its own. The stroke
+ * follows the Settings colour and width.
  *
- * The user draws a gesture; on a match the action runs and the activity
- * finishes. On no match, a message shows; with auto-close on fail the pad
- * closes shortly after, otherwise it stays open for another try. If no
- * gesture is drawn within the overlay timeout, the pad closes on its own
- * (once drawing starts, multi-stroke keeps it open until the gesture
- * is done).
+ * The pad has no Done or Clear buttons (v1.0.11): a gesture is
+ * recognised automatically once the pen-up timer expires. On a match
+ * the pad shows "Opening <name>" with the target's icon at the top
+ * and a soft cyan wave sweeping from the bottom of the pad to the
+ * top, then runs the action and closes. On no match it closes at
+ * once — no message, no prompt. If no gesture is drawn within the
+ * overlay timeout, the pad closes on its own (once drawing starts,
+ * multi-stroke keeps it open until the gesture is done).
  *
  * Note: Android widgets only support taps, not stroke tracking, so drawing
  * happens here in this activity rather than inside the widget.
@@ -141,19 +153,33 @@ private fun DrawScreen(
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
-    val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
-        initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
-    )
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
     )
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
     )
-    var message by remember { mutableStateOf<String?>(null) }
+    val strokeColorArgb by settings.strokeColor.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
+    )
+    val strokeWidthPx by settings.strokeWidth.collectAsState(
+        initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
+    )
+    // The gesture that matched, once one does. While set, the pad shows
+    // the "Opening" banner and the wave, then runs the action. A second
+    // finished gesture is ignored: the pad is already on its way out.
+    var matched by remember { mutableStateOf<Gesture?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+
+    // The wave sweeps from the bottom of the pad (1) to the top (0)
+    // while the "Opening" banner shows.
+    val waveY by animateFloatAsState(
+        targetValue = if (matched != null) 0f else 1f,
+        animationSpec = tween(650, easing = FastOutSlowInEasing),
+        label = "openingWave"
+    )
 
     // Blur the screen behind the window (Android 12 and up). The blur
     // radius comes from settings; 0 means no blur, just the tint.
@@ -171,8 +197,8 @@ private fun DrawScreen(
     // Close on its own if no gesture is drawn within the timeout. Once
     // drawing starts, multi-stroke keeps the pad open until the gesture
     // finishes, so the timer is cancelled for good.
-    LaunchedEffect(timeoutSeconds, drawn) {
-        if (timeoutSeconds > 0 && !drawn) {
+    LaunchedEffect(timeoutSeconds, drawn, matched) {
+        if (timeoutSeconds > 0 && !drawn && matched == null) {
             delay(timeoutSeconds * 1000L)
             onClose()
         }
@@ -197,6 +223,7 @@ private fun DrawScreen(
             DrawPad(
                 modifier = Modifier.fillMaxSize(),
                 onGestureFinished = { raw: List<List<StrokePoint>> ->
+                    if (matched != null) return@DrawPad
                     scope.launch {
                         // Disabled gestures never run: they are left
                         // out of the match entirely (v1.0.10).
@@ -210,42 +237,45 @@ private fun DrawScreen(
                             gestures.firstOrNull { it.name == m.template.name }
                         }
                         if (gesture == null) {
-                            message = "No match, try again"
-                            if (autoCloseOnFail) {
-                                delay(1200)
-                                onClose()
-                            }
+                            // No match: close at once. No message, no
+                            // prompt, no setting for it (v1.0.11).
+                            onClose()
                         } else {
+                            matched = gesture
+                            delay(650)
                             onMatched(gesture, Feedback(vibrateOnRun, soundOnRun))
                         }
                     }
                 },
-                onCleared = { message = null },
                 onFirstStroke = { drawn = true },
                 // The pad sits on top of the user's own screen, so the
                 // stroke gets a dark outline to stay readable anywhere.
-                strokeOutline = true
+                strokeOutline = true,
+                strokeColor = Color(strokeColorArgb),
+                strokeWidth = strokeWidthPx,
+                // No Done/Clear on the overlay pad (v1.0.11): the
+                // gesture is recognised automatically when the timer
+                // expires, so the buttons have nothing to do.
+                showControls = false
             )
-            // No-match message, centred, over the glass. It never sits
-            // at the bottom of the screen, where it would cover the
-            // home screen's own controls.
-            AnimatedVisibility(
-                visible = message != null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                message?.let {
-                    Text(
-                        text = it,
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .background(
-                                Color.Black.copy(alpha = 0.45f),
-                                RoundedCornerShape(20.dp)
-                            )
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
+            // The wave: a soft cyan band sweeping from the bottom of
+            // the pad to the top while the "Opening" banner shows.
+            if (matched != null) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val bandH = size.height * 0.22f
+                    val y = waveY * size.height - bandH / 2f
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                FlickBrand.Cyan.copy(alpha = 0.30f),
+                                Color.Transparent
+                            ),
+                            startY = y,
+                            endY = y + bandH
+                        ),
+                        topLeft = Offset(0f, y),
+                        size = Size(size.width, bandH)
                     )
                 }
             }
@@ -254,25 +284,61 @@ private fun DrawScreen(
             // Neither is clickable, so strokes pass straight through
             // to the pad underneath. The close X (top-left) and the
             // settings gear (top-right) keep their places at the sides.
-            Column(
+            // While a match shows, the header gives way to the banner.
+            if (matched == null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.flick_logo_transparent),
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Image(
+                        painter = painterResource(R.drawable.flick_wordmark),
+                        contentDescription = "Flick",
+                        contentScale = ContentScale.FillHeight,
+                        modifier = Modifier.height(22.dp)
+                    )
+                }
+            }
+            // "Opening <name>" banner: the matched gesture's name with
+            // its target's icon, at the top of the pad, in place of the
+            // brand header while the wave sweeps.
+            AnimatedVisibility(
+                visible = matched != null,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(top = 20.dp)
             ) {
-                Image(
-                    painter = painterResource(R.drawable.flick_logo_transparent),
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Image(
-                    painter = painterResource(R.drawable.flick_wordmark),
-                    contentDescription = "Flick",
-                    contentScale = ContentScale.FillHeight,
-                    modifier = Modifier.height(22.dp)
-                )
+                matched?.let { gesture ->
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                Color.Black.copy(alpha = 0.55f),
+                                RoundedCornerShape(24.dp)
+                            )
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ActionIcon(gesture, size = 36.dp, iconSize = 20.dp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Opening ${gesture.name}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
 
             // Top bar: close on the left, settings on the right. Both sit

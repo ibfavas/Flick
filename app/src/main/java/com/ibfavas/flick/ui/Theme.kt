@@ -30,11 +30,13 @@ object FlickBrand {
     val Outline = Color(0xFF2E2E2E)
 
     /**
-     * The drawn stroke is fixed, not a setting (v1.0.7): brand cyan at a
-     * fixed width, so every stroke looks the same everywhere in the app.
+     * The drawn stroke's defaults (v1.0.11): brand cyan at 14px. Both
+     * are configurable in Settings (stroke width slider, colour
+     * presets); these values are only the defaults. Card glyphs in
+     * the list always stay brand cyan.
      */
     val StrokeColor = Cyan
-    const val StrokeWidth: Float = 10f
+    const val StrokeWidth: Float = 14f
 }
 
 private val FlickColors = darkColorScheme(
