@@ -60,7 +60,13 @@ data class Gesture(
      * 3 samples in total (template + 2 extras). Empty for gestures
      * recorded before multi-sample support.
      */
-    val extraTemplates: String = ""
+    val extraTemplates: String = "",
+    /**
+     * Whether the gesture runs from the pad (v1.0.10). Disabled
+     * gestures stay in the list, dimmed, but never match or run.
+     * Toggled from the gesture detail sheet.
+     */
+    val enabled: Boolean = true
 ) {
     /** All recorded samples of this gesture, first sample first. */
     fun allTemplates(): List<String> =
@@ -99,7 +105,7 @@ data class Gesture(
 class GestureDao(context: Context) {
 
     private val helper = object : SQLiteOpenHelper(
-        context.applicationContext, "flick.db", null, 2
+        context.applicationContext, "flick.db", null, 3
     ) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -109,7 +115,8 @@ class GestureDao(context: Context) {
                     "template TEXT NOT NULL, " +
                     "actionType TEXT NOT NULL, " +
                     "payload TEXT NOT NULL DEFAULT '', " +
-                    "extraTemplates TEXT NOT NULL DEFAULT '')"
+                    "extraTemplates TEXT NOT NULL DEFAULT '', " +
+                    "enabled INTEGER NOT NULL DEFAULT 1)"
             )
         }
 
@@ -118,6 +125,12 @@ class GestureDao(context: Context) {
             if (oldVersion < 2) {
                 db.execSQL(
                     "ALTER TABLE gestures ADD COLUMN extraTemplates TEXT NOT NULL DEFAULT ''"
+                )
+            }
+            // v3 (v1.0.10): enable/disable per gesture from the detail sheet.
+            if (oldVersion < 3) {
+                db.execSQL(
+                    "ALTER TABLE gestures ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
                 )
             }
         }
@@ -183,6 +196,7 @@ class GestureDao(context: Context) {
 
     private fun rowToGesture(cursor: android.database.Cursor): Gesture {
         val extraIdx = cursor.getColumnIndex("extraTemplates")
+        val enabledIdx = cursor.getColumnIndex("enabled")
         return Gesture(
             id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
             name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
@@ -195,6 +209,11 @@ class GestureDao(context: Context) {
                 cursor.getString(extraIdx)
             } else {
                 ""
+            },
+            enabled = if (enabledIdx >= 0 && !cursor.isNull(enabledIdx)) {
+                cursor.getInt(enabledIdx) != 0
+            } else {
+                true
             }
         )
     }
@@ -206,6 +225,7 @@ class GestureDao(context: Context) {
             put("actionType", actionType.name)
             put("payload", payload)
             put("extraTemplates", extraTemplates)
+            put("enabled", if (enabled) 1 else 0)
         }
     }
 }

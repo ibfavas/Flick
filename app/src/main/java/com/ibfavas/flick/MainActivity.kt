@@ -3,7 +3,9 @@ package com.ibfavas.flick
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import com.ibfavas.flick.data.DatabaseProvider
 import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.ui.FlickTheme
@@ -17,6 +19,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge (v1.0.10): the app draws behind the system bars
+        // with transparent, dark-icon bars, and the screens pad
+        // themselves below the status bar (statusBarsPadding) instead
+        // of the old fitsSystemWindows behaviour, so no title or
+        // button ever sits under the notification bar.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         super.onCreate(savedInstanceState)
         try {
             val dao = DatabaseProvider.get(this).gestureDao()

@@ -34,17 +34,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -58,6 +62,7 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
@@ -72,10 +77,12 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -85,6 +92,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -111,6 +120,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -132,21 +142,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class Screen { LIST, RECORD, TEST, SETTINGS }
+private enum class Screen { LIST, DRAW, RECORD, TEST, SETTINGS }
 
 /** Home-screen categories, inspired by Glyf's tabs but Flick's own set. */
 private enum class GestureCategory(val label: String) {
     ALL("All"),
     APPS("Apps"),
     ACTIONS("Actions"),
-    WEBPAGES("Webpages");
+    WEBPAGES("Webpages"),
+    FLOWS("Flows");
 
     fun matches(gesture: Gesture): Boolean = when (this) {
         ALL -> true
         APPS -> gesture.actionType == ActionType.LAUNCH_APP
         WEBPAGES -> gesture.actionType == ActionType.OPEN_URL
+        FLOWS -> gesture.actionType == ActionType.RUN_FLOW
         ACTIONS -> gesture.actionType != ActionType.LAUNCH_APP &&
-            gesture.actionType != ActionType.OPEN_URL
+            gesture.actionType != ActionType.OPEN_URL &&
+            gesture.actionType != ActionType.RUN_FLOW
+    }
+
+    /** The first action type offered when adding from this tab. */
+    fun defaultAction(): ActionType = when (this) {
+        APPS, ALL -> ActionType.LAUNCH_APP
+        WEBPAGES -> ActionType.OPEN_URL
+        ACTIONS -> ActionType.FLASHLIGHT_ON
+        FLOWS -> ActionType.RUN_FLOW
     }
 }
 
@@ -163,11 +184,32 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     // The gesture a sample is being recorded for. While set, the add-sample
     // screen replaces the normal screen flow.
     var addingSampleFor by remember { mutableStateOf<Gesture?>(null) }
+
+    // The new-gesture flow is two steps (v1.0.10): DRAW (a dedicated
+    // full-screen "Draw Gesture" screen, like Glyf's) then RECORD (name
+    // + action). The drawn samples and the tab the user came from are
+    // held here so step 2 knows them, and "Add another sample" can go
+    // back to step 1. recordSamples is only non-empty while a draft is
+    // in progress, which is also how DRAW knows whether back should
+    // return to RECORD (adding a sample) or to LIST (a fresh draw).
+    var recordCategory by remember { mutableStateOf<GestureCategory?>(null) }
+    var recordSamples by remember {
+        mutableStateOf<List<List<List<StrokePoint>>>>(emptyList())
+    }
+
     BackHandler(enabled = addingSampleFor != null || screen != Screen.LIST) {
-        if (addingSampleFor != null) {
-            addingSampleFor = null
-        } else {
-            screen = Screen.LIST
+        when {
+            addingSampleFor != null -> addingSampleFor = null
+            screen == Screen.DRAW -> {
+                if (recordSamples.isNotEmpty()) {
+                    screen = Screen.RECORD
+                } else {
+                    recordCategory = null
+                    screen = Screen.LIST
+                }
+            }
+            screen == Screen.RECORD -> screen = Screen.DRAW
+            else -> screen = Screen.LIST
         }
     }
     // Every screen sits inside a Surface: without one, Text without an
@@ -179,85 +221,152 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-    if (addingSampleFor != null) {
-        AddSampleScreen(
-            dao = dao,
-            gesture = addingSampleFor!!,
-            onBack = { addingSampleFor = null },
-            onSaved = { addingSampleFor = null }
-        )
-    } else {
-    AnimatedContent(
-        targetState = screen,
-        transitionSpec = {
-            (fadeIn(animationSpec = tween(220)) +
-                slideInHorizontally(animationSpec = tween(220)) { it / 5 }) togetherWith
-            (fadeOut(animationSpec = tween(180)) +
-                slideOutHorizontally(animationSpec = tween(180)) { -it / 5 })
-        },
-        label = "screen"
-    ) { current ->
-        when (current) {
-            Screen.LIST -> GestureListScreen(
-                dao = dao,
-                onRecord = { screen = Screen.RECORD },
-                onTest = { screen = Screen.TEST },
-                onSettings = { screen = Screen.SETTINGS },
-                onAddSample = { gesture ->
-                    addingSampleFor = gesture
+        // Edge-to-edge: keep every screen below the status bar and above
+        // the navigation bar. Screens below use contentWindowInsets =
+        // WindowInsets(0, 0, 0, 0) so this padding is not applied twice.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
+            if (addingSampleFor != null) {
+                AddSampleScreen(
+                    dao = dao,
+                    gesture = addingSampleFor!!,
+                    onBack = { addingSampleFor = null },
+                    onSaved = { addingSampleFor = null }
+                )
+            } else {
+                AnimatedContent(
+                    targetState = screen,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(220)) +
+                            slideInHorizontally(animationSpec = tween(220)) { it / 5 }) togetherWith
+                            (fadeOut(animationSpec = tween(180)) +
+                                slideOutHorizontally(animationSpec = tween(180)) { -it / 5 })
+                    },
+                    label = "screen"
+                ) { current ->
+                    when (current) {
+                        Screen.LIST -> GestureListScreen(
+                            dao = dao,
+                            settings = settings,
+                            onAdd = { category ->
+                                recordCategory = category
+                                recordSamples = emptyList()
+                                screen = Screen.DRAW
+                            },
+                            onTest = { screen = Screen.TEST },
+                            onSettings = { screen = Screen.SETTINGS },
+                            onAddSample = { gesture ->
+                                addingSampleFor = gesture
+                            }
+                        )
+                        Screen.DRAW -> DrawGestureScreen(
+                            category = recordCategory,
+                            existingSamples = recordSamples,
+                            onBack = {
+                                if (recordSamples.isNotEmpty()) {
+                                    screen = Screen.RECORD
+                                } else {
+                                    recordCategory = null
+                                    screen = Screen.LIST
+                                }
+                            },
+                            onDone = { allSamples ->
+                                recordSamples = allSamples
+                                screen = Screen.RECORD
+                            }
+                        )
+                        Screen.RECORD -> RecordScreen(
+                            dao = dao,
+                            settings = settings,
+                            initialCategory = recordCategory,
+                            initialSamples = recordSamples,
+                            onAddSample = { screen = Screen.DRAW },
+                            onRedraw = {
+                                recordSamples = emptyList()
+                                screen = Screen.DRAW
+                            },
+                            onBack = { screen = Screen.DRAW },
+                            onSaved = {
+                                recordSamples = emptyList()
+                                recordCategory = null
+                                screen = Screen.LIST
+                            }
+                        )
+                        Screen.TEST -> TestPadScreen(
+                            dao = dao,
+                            settings = settings,
+                            onBack = { screen = Screen.LIST }
+                        )
+                        Screen.SETTINGS -> SettingsScreen(
+                            settings = settings,
+                            dao = dao,
+                            onBack = { screen = Screen.LIST }
+                        )
+                    }
                 }
-            )
-            Screen.RECORD -> RecordScreen(
-                dao = dao,
-                settings = settings,
-                onBack = { screen = Screen.LIST },
-                onSaved = { screen = Screen.LIST }
-            )
-            Screen.TEST -> TestPadScreen(
-                dao = dao,
-                settings = settings,
-                onBack = { screen = Screen.LIST }
-            )
-            Screen.SETTINGS -> SettingsScreen(
-                settings = settings,
-                dao = dao,
-                onBack = { screen = Screen.LIST }
-            )
+            }
         }
-    }
-    }
     }
 }
 
 // ---------------------------------------------------------------- list
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun GestureListScreen(
     dao: GestureDao,
-    onRecord: () -> Unit,
+    settings: SettingsStore,
+    onAdd: (GestureCategory) -> Unit,
     onTest: () -> Unit,
     onSettings: () -> Unit,
     onAddSample: (Gesture) -> Unit
 ) {
+    val context = LocalContext.current
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Gesture?>(null) }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
+    var detail by remember { mutableStateOf<Gesture?>(null) }
     var category by remember { mutableStateOf(GestureCategory.ALL) }
     val filtered = remember(gestures, category) {
         gestures.filter { category.matches(it) }
     }
+    val vibrateOnRun by settings.vibrateOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+    )
+    val soundOnRun by settings.soundOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_SOUND_ON_RUN
+    )
 
     Scaffold(
+        // The MainScreen root already applies statusBarsPadding and
+        // navigationBarsPadding, so the Scaffold must not add its own
+        // system insets on top, or the content would sit too low.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onRecord,
+            ExtendedFloatingActionButton(
+                onClick = { onAdd(category) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = FlickBrand.OnCyan,
                 modifier = Modifier.pressScale()
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add gesture")
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    when (category) {
+                        GestureCategory.ALL -> "Add Gesture"
+                        GestureCategory.APPS -> "Add App"
+                        GestureCategory.ACTIONS -> "Add Action"
+                        GestureCategory.WEBPAGES -> "Add Webpage"
+                        GestureCategory.FLOWS -> "Add Flow"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     ) { padding ->
@@ -307,7 +416,10 @@ private fun GestureListScreen(
                 color = FlickBrand.TextWhite
             )
             Spacer(modifier = Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 GestureCategory.entries.forEach { tab ->
                     CategoryTab(
                         label = tab.label,
@@ -318,37 +430,75 @@ private fun GestureListScreen(
             }
             Spacer(modifier = Modifier.height(12.dp))
             if (filtered.isEmpty()) {
+                // Per-tab empty state, like Glyf's "No actions yet":
+                // a centred icon, a line saying what is missing, and
+                // the matching Add button. Never a blank screen.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 48.dp),
+                        .padding(top = 56.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (gestures.isEmpty()) {
+                    Icon(
+                        when (category) {
+                            GestureCategory.ALL -> Icons.Filled.Create
+                            GestureCategory.APPS -> Icons.AutoMirrored.Filled.ExitToApp
+                            GestureCategory.ACTIONS -> Icons.Filled.PlayArrow
+                            GestureCategory.WEBPAGES -> Icons.Filled.Share
+                            GestureCategory.FLOWS -> Icons.AutoMirrored.Filled.List
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        when (category) {
+                            GestureCategory.ALL -> "No gestures yet"
+                            GestureCategory.APPS -> "No apps yet"
+                            GestureCategory.ACTIONS -> "No actions yet"
+                            GestureCategory.WEBPAGES -> "No webpages yet"
+                            GestureCategory.FLOWS -> "No flows yet"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = FlickBrand.TextWhite
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        when (category) {
+                            GestureCategory.ALL ->
+                                "Tap the button below to draw your first gesture, then pick what it should do."
+                            GestureCategory.APPS ->
+                                "Draw a gesture and link it to an app to launch."
+                            GestureCategory.ACTIONS ->
+                                "Draw a gesture and link it to a phone action."
+                            GestureCategory.WEBPAGES ->
+                                "Draw a gesture and link it to a webpage to open."
+                            GestureCategory.FLOWS ->
+                                "Draw a gesture and link it to a flow of actions."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(
+                        onClick = { onAdd(category) },
+                        modifier = Modifier
+                            .height(56.dp)
+                            .pressScale()
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "No gestures yet",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = FlickBrand.TextWhite
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Tap + to draw your first gesture, then pick what it should do.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            "No gestures in this category",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = FlickBrand.TextWhite
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Try another tab, or tap + to add one here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            when (category) {
+                                GestureCategory.ALL -> "Add Gesture"
+                                GestureCategory.APPS -> "Add App"
+                                GestureCategory.ACTIONS -> "Add Action"
+                                GestureCategory.WEBPAGES -> "Add Webpage"
+                                GestureCategory.FLOWS -> "Add Flow"
+                            },
+                            style = MaterialTheme.typography.titleMedium
                         )
                     }
                 }
@@ -366,6 +516,7 @@ private fun GestureListScreen(
                         ) {
                             GestureCard(
                                 gesture = gesture,
+                                onClick = { detail = gesture },
                                 onEdit = { editing = gesture },
                                 onDelete = { deleting = gesture }
                             )
@@ -416,6 +567,44 @@ private fun GestureListScreen(
             }
         )
     }
+
+    // Gesture detail bottom sheet (v1.0.10): the drawn gesture large on
+    // a card, an action row (edit, enable/disable, delete, test), and
+    // the name + description below. The sheet reads the gesture from
+    // the list flow, so toggling or testing it always sees the latest
+    // state after the dao updates it.
+    detail?.let { shown ->
+        val live = gestures.firstOrNull { it.id == shown.id } ?: shown
+        ModalBottomSheet(
+            onDismissRequest = { detail = null },
+            sheetState = rememberModalBottomSheetState(),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            GestureDetailSheet(
+                gesture = live,
+                onEdit = {
+                    detail = null
+                    editing = live
+                },
+                onToggleEnabled = {
+                    scope.launch {
+                        dao.update(live.copy(enabled = !live.enabled))
+                    }
+                },
+                onDelete = {
+                    detail = null
+                    deleting = live
+                },
+                onTest = {
+                    ActionExecutor.execute(
+                        context,
+                        live,
+                        Feedback(vibrateOnRun, soundOnRun)
+                    )
+                }
+            )
+        }
+    }
 }
 
 /**
@@ -447,39 +636,210 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun GestureCard(
     gesture: Gesture,
+    onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val description = remember(gesture) { gestureDescription(gesture) }
+    val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
+        appLabel(gesture.payload)
+    } else {
+        null
+    }
+    val description = remember(gesture, appLabel) {
+        gestureDescription(gesture, appLabel)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .border(1.dp, FlickBrand.Outline, RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .combinedClickable(onClick = onEdit, onLongClick = onDelete)
+            // Tap opens the detail sheet; long-press still deletes,
+            // as before. Disabled gestures are dimmed so their state
+            // is obvious at a glance.
+            .combinedClickable(onClick = onClick, onLongClick = onDelete)
+            .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         GestureGlyph(
             template = gesture.template,
-            modifier = Modifier.size(56.dp)
+            modifier = Modifier.size(72.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 gesture.name,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = FlickBrand.TextWhite
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        DragHandle()
+    }
+}
+
+/** The six-dot grip on the right edge of a gesture card, like Glyf's. */
+@Composable
+private fun DragHandle() {
+    Canvas(modifier = Modifier.size(16.dp, 28.dp)) {
+        val radius = 2.dp.toPx()
+        val color = Color(0xFF8A8A8A)
+        val xs = listOf(size.width * 0.3f, size.width * 0.7f)
+        val ys = listOf(size.height * 0.2f, size.height * 0.5f, size.height * 0.8f)
+        for (x in xs) {
+            for (y in ys) {
+                drawCircle(color, radius, Offset(x, y))
+            }
+        }
+    }
+}
+
+/** The target app's display name, cached per process. */
+private object AppLabelCache {
+    val labels = mutableStateMapOf<String, String?>()
+}
+
+@Composable
+private fun appLabel(packageName: String): String? {
+    val context = LocalContext.current
+    val cached = AppLabelCache.labels[packageName]
+    LaunchedEffect(packageName) {
+        if (!AppLabelCache.labels.containsKey(packageName)) {
+            val label = withContext(Dispatchers.IO) {
+                try {
+                    context.packageManager.getApplicationLabel(
+                        context.packageManager.getApplicationInfo(packageName, 0)
+                    ).toString()
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            AppLabelCache.labels[packageName] = label
+        }
+    }
+    return cached
+}
+
+/**
+ * The gesture detail bottom sheet (v1.0.10): the drawn gesture large
+ * on a card, an action row (edit, enable/disable, delete, test), and
+ * the name + description below. Edit opens the edit dialog, the toggle
+ * enables/disables the gesture, delete asks for confirmation, and
+ * test runs the gesture's action.
+ */
+@Composable
+private fun GestureDetailSheet(
+    gesture: Gesture,
+    onEdit: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onDelete: () -> Unit,
+    onTest: () -> Unit
+) {
+    val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
+        appLabel(gesture.payload)
+    } else {
+        null
+    }
+    val description = remember(gesture, appLabel) {
+        gestureDescription(gesture, appLabel)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Filled.Create, contentDescription = "Edit")
+                }
+                Text("Edit", style = MaterialTheme.typography.bodySmall)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Switch(
+                    checked = gesture.enabled,
+                    onCheckedChange = { onToggleEnabled() }
+                )
+                Text(
+                    if (gesture.enabled) "Enabled" else "Disabled",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Delete",
+                        tint = Color(0xFFFF5252)
+                    )
+                }
+                Text("Delete", style = MaterialTheme.typography.bodySmall)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(
+                    enabled = gesture.enabled,
+                    onClick = onTest
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Test")
+                }
+                Text("Test", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        GestureGlyph(
+            template = gesture.template,
+            modifier = Modifier.size(200.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            gesture.name,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = FlickBrand.TextWhite
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
-        ActionIcon(gesture)
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            "${gesture.sampleCount()} sample${if (gesture.sampleCount() == 1) "" else "s"} of " +
+                "${Gesture.MAX_SAMPLES}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (!gesture.enabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Disabled — this gesture will not run from the pad.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -535,13 +895,18 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     }
 }
 
-private fun gestureDescription(gesture: Gesture): String {
-    val base = ActionExecutor.describe(gesture)
+private fun gestureDescription(gesture: Gesture, appLabel: String? = null): String {
+    val base = when (gesture.actionType) {
+        ActionType.LAUNCH_APP -> "Launches ${appLabel ?: gesture.payload}"
+        ActionType.OPEN_URL -> "Opens ${gesture.payload}"
+        else -> ActionExecutor.describe(gesture)
+    }
     val strokes = Recognizer.strokesFromString(gesture.template).size
     val samples = gesture.sampleCount()
     var text = base
     if (strokes > 1) text += ", $strokes strokes"
     if (samples > 1) text += ", $samples samples"
+    if (!gesture.enabled) text += " · Disabled"
     return text
 }
 
@@ -567,7 +932,7 @@ private fun iconFor(type: ActionType): ImageVector = when (type) {
 }
 
 @Composable
-private fun ActionIcon(gesture: Gesture) {
+private fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
     val context = LocalContext.current
     if (gesture.actionType == ActionType.LAUNCH_APP) {
         var bitmap by remember(gesture.payload) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
@@ -584,22 +949,22 @@ private fun ActionIcon(gesture: Gesture) {
                 bitmap = bitmap!!,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(size)
                     .clip(RoundedCornerShape(10.dp))
             )
         } else {
-            FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp)
+            FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp, size, iconSize)
         }
     } else {
-        FallbackIcon(iconFor(gesture.actionType))
+        FallbackIcon(iconFor(gesture.actionType), size, iconSize)
     }
 }
 
 @Composable
-private fun FallbackIcon(icon: ImageVector) {
+private fun FallbackIcon(icon: ImageVector, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
@@ -608,7 +973,7 @@ private fun FallbackIcon(icon: ImageVector) {
             icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(iconSize)
         )
     }
 }
@@ -670,26 +1035,206 @@ private fun EditGestureDialog(
     )
 }
 
+// ---------------------------------------------------------------- draw gesture
+
+/**
+ * The dedicated "Draw Gesture" screen (v1.0.10), like Glyf's: a top
+ * bar with back, the title and a Done button (disabled until a
+ * gesture is drawn), and a large full-screen draw area below. The
+ * squiggle + "Draw here" hint shows while the area is empty. Drawing
+ * is the same multi-stroke pad as the record screen (900 ms pen-up
+ * timer, strokes stay visible). Done returns the drawn gesture
+ * appended to the samples already kept, and the caller moves on to
+ * the name + action step.
+ */
+@Composable
+private fun DrawGestureScreen(
+    category: GestureCategory?,
+    existingSamples: List<List<List<StrokePoint>>>,
+    onBack: () -> Unit,
+    onDone: (List<List<List<StrokePoint>>>) -> Unit
+) {
+    var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
+    var drawn by remember { mutableStateOf(false) }
+    var padKey by remember { mutableStateOf(0) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Draw Gesture",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = FlickBrand.TextWhite,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                enabled = captured != null,
+                onClick = { captured?.let { onDone(existingSamples + listOf(it)) } }
+            ) {
+                Icon(Icons.Filled.Check, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Done")
+            }
+        }
+        if (existingSamples.isNotEmpty()) {
+            Text(
+                "Adding sample ${existingSamples.size + 1} of ${Gesture.MAX_SAMPLES}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 56.dp, top = 4.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                    RoundedCornerShape(20.dp)
+                )
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            if (captured == null) {
+                // A fresh pad per draw: key() drops the old DrawPad
+                // state (its strokes, timer and hint) when a sample
+                // is kept or redrawn.
+                key(padKey) {
+                    DrawPad(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        onGestureFinished = { captured = it },
+                        onCleared = { captured = null },
+                        onFirstStroke = { drawn = true }
+                    )
+                }
+                // Centred hint while nothing is drawn yet. It has no
+                // input handler, so touches pass straight through to
+                // the pad underneath.
+                if (!drawn) {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        SquiggleIcon(modifier = Modifier.size(72.dp, 48.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Draw here",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                // The pad clears its strokes once the gesture is
+                // captured, so show the captured gesture itself.
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    GestureGlyph(
+                        template = Recognizer.strokesToString(captured!!),
+                        modifier = Modifier.size(200.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Gesture captured: ${captured!!.size} stroke" +
+                            if (captured!!.size == 1) "" else "s",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = FlickBrand.TextWhite
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(onClick = {
+                        captured = null
+                        drawn = false
+                        padKey++
+                    }) {
+                        Text("Redraw")
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            when (category) {
+                GestureCategory.APPS -> "Then choose the app it launches."
+                GestureCategory.ACTIONS -> "Then choose the phone action it runs."
+                GestureCategory.WEBPAGES -> "Then choose the webpage it opens."
+                GestureCategory.FLOWS -> "Then build the flow it runs."
+                else -> "Then name it and choose what it does."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** A small hand-drawn squiggle, the "Draw here" hint glyph. */
+@Composable
+private fun SquiggleIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val style = Stroke(
+            width = 3.dp.toPx(),
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
+        val path = Path().apply {
+            moveTo(size.width * 0.05f, size.height * 0.6f)
+            cubicTo(
+                size.width * 0.2f, size.height * 0.1f,
+                size.width * 0.35f, size.height * 1.0f,
+                size.width * 0.5f, size.height * 0.5f
+            )
+            cubicTo(
+                size.width * 0.65f, size.height * 0.0f,
+                size.width * 0.8f, size.height * 0.9f,
+                size.width * 0.95f, size.height * 0.4f
+            )
+        }
+        drawPath(path, FlickBrand.Cyan.copy(alpha = 0.7f), style = style)
+    }
+}
+
 // ---------------------------------------------------------------- record
 
 @Composable
 private fun RecordScreen(
     dao: GestureDao,
     settings: SettingsStore,
+    initialCategory: GestureCategory?,
+    initialSamples: List<List<List<StrokePoint>>>,
+    onAddSample: () -> Unit,
+    onRedraw: () -> Unit,
     onBack: () -> Unit,
     onSaved: () -> Unit
 ) {
+    // Step 2 of the new-gesture flow (v1.0.10): the gesture is already
+    // drawn on the dedicated Draw Gesture screen, so this screen is
+    // only the name + action step. The drawn samples arrive here and
+    // are shown as a preview; "Add another sample" goes back to the
+    // draw screen, and "Redraw" starts the drawing over. The action
+    // list is locked to the tab the user came from (contextual Add):
+    // Apps offers only apps, Actions only phone actions, Webpages
+    // only links, Flows only flows.
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
-    // Samples recorded for this gesture: the first is the template, the
-    // rest are extra samples (v1.0.8). The recognizer matches against
-    // every sample, so the same gesture drawn a little differently still
-    // matches. Up to Gesture.MAX_SAMPLES in total.
-    var samples by remember { mutableStateOf<List<List<List<StrokePoint>>>>(emptyList()) }
-    var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
-    var padKey by remember { mutableStateOf(0) }
-    var action by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
-    val totalSamples = samples.size + if (captured != null) 1 else 0
+    var action by remember {
+        mutableStateOf(
+            ActionSelection(
+                initialCategory?.defaultAction() ?: ActionType.LAUNCH_APP,
+                ""
+            )
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -707,9 +1252,11 @@ private fun RecordScreen(
                 Text(
                     "New gesture",
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = FlickBrand.TextWhite
                 )
             }
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -719,59 +1266,51 @@ private fun RecordScreen(
         }
         item {
             Text(
-                "Draw your gesture in the box:",
+                "Your gesture",
+                style = MaterialTheme.typography.titleMedium,
                 color = FlickBrand.TextWhite
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(340.dp)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                        RoundedCornerShape(16.dp)
-                    )
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-            ) {
-                // A fresh pad per sample: key() drops the old DrawPad
-                // state (its strokes, timer and hint) when a sample is kept.
-                key(padKey) {
-                    DrawPad(
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
-                        onGestureFinished = { captured = it },
-                        onCleared = { captured = null }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                initialSamples.forEach { sample ->
+                    GestureGlyph(
+                        template = Recognizer.strokesToString(sample),
+                        modifier = Modifier.size(96.dp)
                     )
                 }
             }
-            Text(
-                when {
-                    captured == null && samples.isEmpty() -> "Nothing drawn yet"
-                    captured == null -> "$totalSamples sample${if (totalSamples == 1) "" else "s"} recorded"
-                    else -> {
-                        val strokes = captured!!.size
-                        val points = captured!!.sumOf { it.size }
-                        "Sample $totalSamples captured: $strokes stroke${if (strokes == 1) "" else "s"}, $points points"
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onRedraw,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Redraw")
+                }
+                // Extra samples make recognition more accurate: draw
+                // the same gesture again, a little differently if you
+                // like. This goes back to the draw screen, which
+                // appends the new sample to the ones already kept.
+                if (initialSamples.size < Gesture.MAX_SAMPLES) {
+                    OutlinedButton(
+                        onClick = onAddSample,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Add another sample " +
+                                "(${initialSamples.size + 1} of ${Gesture.MAX_SAMPLES})"
+                        )
                     }
-                },
+                }
+            }
+            Text(
+                "${initialSamples.size} sample" +
+                    if (initialSamples.size == 1) "" else "s" +
+                    " recorded. More samples make recognition more accurate.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
-            // Extra samples make recognition more accurate: draw the same
-            // gesture again, a little differently if you like.
-            if (captured != null && samples.size < Gesture.MAX_SAMPLES - 1) {
-                OutlinedButton(
-                    onClick = {
-                        samples = samples + listOf(captured!!)
-                        captured = null
-                        padKey++
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Add another sample (${totalSamples + 1} of ${Gesture.MAX_SAMPLES})")
-                }
-            }
         }
         item {
             Text(
@@ -779,21 +1318,24 @@ private fun RecordScreen(
                 style = MaterialTheme.typography.titleMedium,
                 color = FlickBrand.TextWhite
             )
-            ActionPicker(action = action, onChange = { action = it })
+            ActionPicker(
+                action = action,
+                onChange = { action = it },
+                filter = initialCategory
+            )
         }
         item {
-            val allSamples = samples + listOfNotNull(captured)
             Button(
-                enabled = name.isNotBlank() && allSamples.isNotEmpty() && action.isValid(),
+                enabled = name.isNotBlank() && initialSamples.isNotEmpty() && action.isValid(),
                 onClick = {
                     scope.launch {
                         dao.insert(
                             Gesture(
                                 name = name.trim(),
-                                template = Recognizer.strokesToString(allSamples[0]),
+                                template = Recognizer.strokesToString(initialSamples[0]),
                                 actionType = action.type,
                                 payload = action.payload,
-                                extraTemplates = allSamples.drop(1)
+                                extraTemplates = initialSamples.drop(1)
                                     .joinToString("\n") { Recognizer.strokesToString(it) }
                             )
                         )
@@ -930,7 +1472,8 @@ private data class ActionSelection(val type: ActionType, val payload: String) {
 private fun ActionPicker(
     action: ActionSelection,
     onChange: (ActionSelection) -> Unit,
-    allowFlow: Boolean = true
+    allowFlow: Boolean = true,
+    filter: GestureCategory? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -968,33 +1511,50 @@ private fun ActionPicker(
         }
     }
 
+    // Contextual Add (v1.0.10): when the user adds from a tab, only
+    // that tab's category is offered. No filter (edit dialog, flow
+    // steps) means every category, as before.
+    val showApps = filter == null || filter == GestureCategory.ALL ||
+        filter == GestureCategory.APPS
+    val showUrls = filter == null || filter == GestureCategory.ALL ||
+        filter == GestureCategory.WEBPAGES
+    val showActions = filter == null || filter == GestureCategory.ALL ||
+        filter == GestureCategory.ACTIONS
+    val showFlows = allowFlow && (filter == null || filter == GestureCategory.ALL ||
+        filter == GestureCategory.FLOWS)
+
     Column {
-        ActionOption(
-            label = "Launch an app",
-            selected = action.type == ActionType.LAUNCH_APP,
-            onClick = { onChange(ActionSelection(ActionType.LAUNCH_APP, action.payload)) }
-        )
-        if (action.type == ActionType.LAUNCH_APP) {
-            OutlinedButton(
-                onClick = { showAppPicker = true },
-                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
-            ) {
-                Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
+        if (showApps) {
+            ActionOption(
+                label = "Launch an app",
+                selected = action.type == ActionType.LAUNCH_APP,
+                onClick = { onChange(ActionSelection(ActionType.LAUNCH_APP, action.payload)) }
+            )
+            if (action.type == ActionType.LAUNCH_APP) {
+                OutlinedButton(
+                    onClick = { showAppPicker = true },
+                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
+                ) {
+                    Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
+                }
             }
         }
-        ActionOption(
-            label = "Open a link",
-            selected = action.type == ActionType.OPEN_URL,
-            onClick = { onChange(ActionSelection(ActionType.OPEN_URL, "")) }
-        )
-        if (action.type == ActionType.OPEN_URL) {
-            OutlinedTextField(
-                value = action.payload,
-                onValueChange = { onChange(ActionSelection(ActionType.OPEN_URL, it)) },
-                label = { Text("URL, e.g. example.com") },
-                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
+        if (showUrls) {
+            ActionOption(
+                label = "Open a link",
+                selected = action.type == ActionType.OPEN_URL,
+                onClick = { onChange(ActionSelection(ActionType.OPEN_URL, "")) }
             )
+            if (action.type == ActionType.OPEN_URL) {
+                OutlinedTextField(
+                    value = action.payload,
+                    onValueChange = { onChange(ActionSelection(ActionType.OPEN_URL, it)) },
+                    label = { Text("URL, e.g. example.com") },
+                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
+                )
+            }
         }
+        if (showActions) {
         ActionOption(
             label = "Flashlight on",
             selected = action.type == ActionType.FLASHLIGHT_ON,
@@ -1105,7 +1665,8 @@ private fun ActionPicker(
                 modifier = Modifier.padding(start = 32.dp)
             )
         }
-        if (allowFlow) {
+        }
+        if (showFlows) {
             ActionOption(
                 label = "Run a flow",
                 selected = action.type == ActionType.RUN_FLOW,
@@ -1486,7 +2047,9 @@ private fun TestPadScreen(
                 modifier = Modifier.fillMaxSize().padding(8.dp),
                 onGestureFinished = { raw ->
                     scope.launch {
-                        val gestures = dao.getAll()
+                        // Disabled gestures never run: they are left
+                        // out of the match entirely (v1.0.10).
+                        val gestures = dao.getAll().filter { it.enabled }
                         // Every recorded sample of every gesture: the
                         // recognizer matches against all of them and
                         // takes the best score.

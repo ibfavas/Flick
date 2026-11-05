@@ -4,7 +4,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,6 +85,14 @@ import kotlinx.coroutines.launch
 class DrawActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge (v1.0.10), same as MainActivity: transparent
+        // system bars, and the pad's header/top row pad themselves
+        // below the status bar (statusBarsPadding) so the logo, the
+        // close X and the gear never sit under the notification bar.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         super.onCreate(savedInstanceState)
         // Frosted glass starts at the window: a transparent background
         // with no dim, so the screen underneath can be blurred and
@@ -187,7 +198,9 @@ private fun DrawScreen(
                 modifier = Modifier.fillMaxSize(),
                 onGestureFinished = { raw: List<List<StrokePoint>> ->
                     scope.launch {
-                        val gestures = dao.getAll()
+                        // Disabled gestures never run: they are left
+                        // out of the match entirely (v1.0.10).
+                        val gestures = dao.getAll().filter { it.enabled }
                         // Every recorded sample of every gesture: the
                         // recognizer matches against all of them and
                         // takes the best score.
@@ -244,6 +257,7 @@ private fun DrawScreen(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
+                    .statusBarsPadding()
                     .padding(top = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -266,6 +280,7 @@ private fun DrawScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(16.dp)
                     .align(Alignment.TopCenter),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween

@@ -8,8 +8,11 @@ import org.json.JSONObject
  *
  * Format, one JSON object:
  * {"version":1,"app":"Flick","gestures":[
- *   {"name":"...","template":"...","extraTemplates":"...","actionType":"LAUNCH_APP","payload":"..."}
+ *   {"name":"...","template":"...","extraTemplates":"...","actionType":"LAUNCH_APP","payload":"...","enabled":true}
  * ]}
+ *
+ * "enabled" is optional on import: a backup written before v1.0.10 has
+ * no such field and imports as enabled.
  *
  * Import is defensive: the file is validated before anything is
  * written, invalid entries are skipped and counted, and gestures whose
@@ -37,6 +40,7 @@ object Backup {
                     .put("extraTemplates", gesture.extraTemplates)
                     .put("actionType", gesture.actionType.name)
                     .put("payload", gesture.payload)
+                    .put("enabled", gesture.enabled)
             )
         }
         return JSONObject()
@@ -97,7 +101,8 @@ object Backup {
                         template = template,
                         actionType = type,
                         payload = obj.optString("payload", ""),
-                        extraTemplates = obj.optString("extraTemplates", "")
+                        extraTemplates = obj.optString("extraTemplates", ""),
+                        enabled = obj.optBoolean("enabled", true)
                     )
                 )
             }
