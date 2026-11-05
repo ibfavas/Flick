@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -147,6 +148,35 @@ import kotlinx.coroutines.withContext
 private enum class Screen { LIST, DRAW, RECORD, TEST, SETTINGS }
 
 /**
+ * Home-screen categories (v1.0.13): the tabs are back, but there is
+ * no "All" tab — the user meant only "All" to go, not the tabs
+ * themselves. Default tab: Apps. Every gesture fits exactly one tab.
+ */
+private enum class GestureCategory(val label: String) {
+    APPS("Apps"),
+    ACTIONS("Actions"),
+    WEBPAGES("Webpages"),
+    FLOWS("Flows");
+
+    fun matches(gesture: Gesture): Boolean = when (this) {
+        APPS -> gesture.actionType == ActionType.LAUNCH_APP
+        WEBPAGES -> gesture.actionType == ActionType.OPEN_URL
+        FLOWS -> gesture.actionType == ActionType.RUN_FLOW
+        ACTIONS -> gesture.actionType != ActionType.LAUNCH_APP &&
+            gesture.actionType != ActionType.OPEN_URL &&
+            gesture.actionType != ActionType.RUN_FLOW
+    }
+
+    /** The first action type offered when adding from this tab. */
+    fun defaultAction(): ActionType = when (this) {
+        APPS -> ActionType.LAUNCH_APP
+        WEBPAGES -> ActionType.OPEN_URL
+        ACTIONS -> ActionType.FLASHLIGHT_ON
+        FLOWS -> ActionType.RUN_FLOW
+    }
+}
+
+/**
  * Flick v1.0.8: AMOLED. Pitch black, white text, one bright cyan
  * accent; the wordmark is the header. The home screen is the gesture
  * list plus a floating add button and a settings entry. No bottom
@@ -162,9 +192,11 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
 
     // The new-gesture flow is two steps (v1.0.10): DRAW (a dedicated
     // full-screen "Draw Gesture" screen, like Glyf's) then RECORD (name
-    // + action). The drawn samples are held here so "Add another
-    // sample" can go back to step 1. recordSamples is only non-empty
-    // while a draft is in progress.
+    // + action). The drawn samples and the tab the user came from are
+    // held here so step 2 knows them, and "Add another sample" can go
+    // back to step 1. recordSamples is only non-empty while a draft is
+    // in progress.
+    var recordCategory by remember { mutableStateOf<GestureCategory?>(null) }
     var recordSamples by remember {
         mutableStateOf<List<List<List<StrokePoint>>>>(emptyList())
     }
@@ -178,6 +210,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     var drawReturnToRecord by remember { mutableStateOf(false) }
 
     fun exitDrawFlow() {
+        recordCategory = null
         recordSamples = emptyList()
         drawReturnToRecord = false
         screen = Screen.LIST
@@ -245,7 +278,8 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                         Screen.LIST -> GestureListScreen(
                             dao = dao,
                             settings = settings,
-                            onAdd = {
+                            onAdd = { category ->
+                                recordCategory = category
                                 recordSamples = emptyList()
                                 drawReturnToRecord = false
                                 screen = Screen.DRAW
@@ -256,6 +290,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                             }
                         )
                         Screen.DRAW -> DrawGestureScreen(
+                            category = recordCategory,
                             existingSamples = recordSamples,
                             settings = settings,
                             onBack = { backFromDraw() },
@@ -267,6 +302,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                         Screen.RECORD -> RecordScreen(
                             dao = dao,
                             settings = settings,
+                            initialCategory = recordCategory,
                             initialSamples = recordSamples,
                             onAddSample = {
                                 drawReturnToRecord = true
@@ -279,6 +315,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                             },
                             onBack = { backFromRecord() },
                             onSaved = {
+                                recordCategory = null
                                 recordSamples = emptyList()
                                 drawReturnToRecord = false
                                 screen = Screen.LIST
@@ -309,7 +346,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
 private fun GestureListScreen(
     dao: GestureDao,
     settings: SettingsStore,
-    onAdd: () -> Unit,
+    onAdd: (GestureCategory) -> Unit,
     onSettings: () -> Unit,
     onAddSample: (Gesture) -> Unit
 ) {
@@ -319,6 +356,11 @@ private fun GestureListScreen(
     var editing by remember { mutableStateOf<Gesture?>(null) }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
     var detail by remember { mutableStateOf<Gesture?>(null) }
+    // Tabs are back (v1.0.13) without an "All" tab. Default: Apps.
+    var category by remember { mutableStateOf(GestureCategory.APPS) }
+    val filtered = remember(gestures, category) {
+        gestures.filter { category.matches(it) }
+    }
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
     )
@@ -333,7 +375,7 @@ private fun GestureListScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = onAdd,
+                onClick = { onAdd(category) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = FlickBrand.OnCyan,
                 modifier = Modifier.pressScale()
@@ -341,7 +383,12 @@ private fun GestureListScreen(
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    "Add Gesture",
+                    when (category) {
+                        GestureCategory.APPS -> "Add App"
+                        GestureCategory.ACTIONS -> "Add Action"
+                        GestureCategory.WEBPAGES -> "Add Webpage"
+                        GestureCategory.FLOWS -> "Add Flow"
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -355,11 +402,10 @@ private fun GestureListScreen(
                 .padding(horizontal = 20.dp)
                 .padding(top = 12.dp)
         ) {
-            // Home page (v1.0.12): the list itself only — wordmark
-            // header with a small settings gear, count line, cards,
-            // and the + Add button. No tabs, no big "Draw a gesture"
-            // button, no hint text. The gear is the discoverable way
-            // into Settings; the overlay pad's gear and the detail
+            // Home page (v1.0.13): wordmark header with a small
+            // settings gear, count line, category tabs (no "All" tab),
+            // cards, and the + Add button. The gear is the discoverable
+            // way into Settings; the overlay pad's gear and the detail
             // sheet's Settings entry still work too.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
@@ -381,11 +427,24 @@ private fun GestureListScreen(
                 letterSpacing = 2.sp,
                 color = FlickBrand.TextWhite
             )
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GestureCategory.entries.forEach { tab ->
+                    CategoryTab(
+                        label = tab.label,
+                        selected = category == tab,
+                        onClick = { category = tab }
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
-            if (gestures.isEmpty()) {
-                // Single empty state (v1.0.12): no tabs, so there is
-                // only one list. A centred icon, a line saying what
-                // is missing, and the Add button. Never a blank screen.
+            if (filtered.isEmpty()) {
+                // Per-tab empty state, like Glyf's "No actions yet":
+                // a centred icon, a line saying what is missing, and
+                // the matching Add button. Never a blank screen.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -393,34 +452,61 @@ private fun GestureListScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        Icons.Filled.Create,
+                        when (category) {
+                            GestureCategory.APPS -> Icons.AutoMirrored.Filled.ExitToApp
+                            GestureCategory.ACTIONS -> Icons.Filled.PlayArrow
+                            GestureCategory.WEBPAGES -> Icons.Filled.Share
+                            GestureCategory.FLOWS -> Icons.AutoMirrored.Filled.List
+                        },
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(56.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "No gestures yet",
+                        when (category) {
+                            GestureCategory.APPS -> "No apps yet"
+                            GestureCategory.ACTIONS -> "No actions yet"
+                            GestureCategory.WEBPAGES -> "No webpages yet"
+                            GestureCategory.FLOWS -> "No flows yet"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = FlickBrand.TextWhite
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Tap the button below to draw your first gesture, then pick what it should do.",
+                        when (category) {
+                            GestureCategory.APPS ->
+                                "Draw a gesture and link it to an app to launch."
+                            GestureCategory.ACTIONS ->
+                                "Draw a gesture and link it to a phone action."
+                            GestureCategory.WEBPAGES ->
+                                "Draw a gesture and link it to a webpage to open."
+                            GestureCategory.FLOWS ->
+                                "Draw a gesture and link it to a flow of actions."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     Button(
-                        onClick = onAdd,
+                        onClick = { onAdd(category) },
                         modifier = Modifier
                             .height(56.dp)
                             .pressScale()
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Add Gesture", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            when (category) {
+                                GestureCategory.APPS -> "Add App"
+                                GestureCategory.ACTIONS -> "Add Action"
+                                GestureCategory.WEBPAGES -> "Add Webpage"
+                                GestureCategory.FLOWS -> "Add Flow"
+                            },
+                            style = MaterialTheme.typography.titleMedium
+                        )
                     }
                 }
             } else {
@@ -428,7 +514,7 @@ private fun GestureListScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    items(gestures, key = { it.id }) { gesture ->
+                    items(filtered, key = { it.id }) { gesture ->
                         AnimatedVisibility(
                             visible = true,
                             enter = fadeIn(animationSpec = tween(250)) +
@@ -529,6 +615,31 @@ private fun GestureListScreen(
                 }
             )
         }
+    }
+}
+
+/**
+ * A category pill for the home screen. Selected: cyan fill, dark text.
+ * Unselected: near-black surface, white text.
+ */
+@Composable
+private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (selected) FlickBrand.Cyan else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) FlickBrand.OnCyan else FlickBrand.TextWhite
+        )
     }
 }
 
@@ -895,6 +1006,7 @@ private fun EditGestureDialog(
  */
 @Composable
 private fun DrawGestureScreen(
+    category: GestureCategory?,
     existingSamples: List<List<List<StrokePoint>>>,
     settings: SettingsStore,
     onBack: () -> Unit,
@@ -1019,7 +1131,13 @@ private fun DrawGestureScreen(
         }
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "Then name it and choose what it does.",
+            when (category) {
+                GestureCategory.APPS -> "Then choose the app it launches."
+                GestureCategory.ACTIONS -> "Then choose the phone action it runs."
+                GestureCategory.WEBPAGES -> "Then choose the webpage it opens."
+                GestureCategory.FLOWS -> "Then build the flow it runs."
+                else -> "Then name it and choose what it does."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1058,6 +1176,7 @@ private fun SquiggleIcon(modifier: Modifier = Modifier) {
 private fun RecordScreen(
     dao: GestureDao,
     settings: SettingsStore,
+    initialCategory: GestureCategory?,
     initialSamples: List<List<List<StrokePoint>>>,
     onAddSample: () -> Unit,
     onRedraw: () -> Unit,
@@ -1068,13 +1187,19 @@ private fun RecordScreen(
     // drawn on the dedicated Draw Gesture screen, so this screen is
     // only the name + action step. The drawn samples arrive here and
     // are shown as a preview; "Add another sample" goes back to the
-    // draw screen, and "Redraw" starts the drawing over. Every action
-    // type is offered (v1.0.12: the tabs are gone, so there is no tab
-    // category to lock the list to).
+    // draw screen, and "Redraw" starts the drawing over. The action
+    // list is locked to the tab the user came from (contextual Add):
+    // Apps offers only apps, Actions only phone actions, Webpages
+    // only links, Flows only flows.
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
     var action by remember {
-        mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, ""))
+        mutableStateOf(
+            ActionSelection(
+                initialCategory?.defaultAction() ?: ActionType.LAUNCH_APP,
+                ""
+            )
+        )
     }
 
     LazyColumn(
@@ -1159,7 +1284,11 @@ private fun RecordScreen(
                 style = MaterialTheme.typography.titleMedium,
                 color = FlickBrand.TextWhite
             )
-            ActionPicker(action = action, onChange = { action = it })
+            ActionPicker(
+                action = action,
+                onChange = { action = it },
+                filter = initialCategory
+            )
         }
         item {
             Button(
@@ -1318,7 +1447,8 @@ private data class ActionSelection(val type: ActionType, val payload: String) {
 private fun ActionPicker(
     action: ActionSelection,
     onChange: (ActionSelection) -> Unit,
-    allowFlow: Boolean = true
+    allowFlow: Boolean = true,
+    filter: GestureCategory? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1356,10 +1486,16 @@ private fun ActionPicker(
         }
     }
 
-    // Every action type is offered (v1.0.12): the tabs are gone, so
-    // there is no category to filter by. (The flow-step picker still
-    // hides "Run a flow" via allowFlow = false.)
+    // Contextual Add (v1.0.13): when the user adds from a tab, only
+    // that tab's category is offered. No filter (edit dialog, flow
+    // steps) means every category, as before.
+    val showApps = filter == null || filter == GestureCategory.APPS
+    val showUrls = filter == null || filter == GestureCategory.WEBPAGES
+    val showActions = filter == null || filter == GestureCategory.ACTIONS
+    val showFlows = allowFlow && (filter == null || filter == GestureCategory.FLOWS)
+
     Column {
+        if (showApps) {
         ActionOption(
             label = "Launch an app",
             selected = action.type == ActionType.LAUNCH_APP,
@@ -1373,6 +1509,8 @@ private fun ActionPicker(
                 Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
             }
         }
+        }
+        if (showUrls) {
         ActionOption(
             label = "Open a link",
             selected = action.type == ActionType.OPEN_URL,
@@ -1386,6 +1524,8 @@ private fun ActionPicker(
                 modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
             )
         }
+        }
+        if (showActions) {
         ActionOption(
             label = "Flashlight on",
             selected = action.type == ActionType.FLASHLIGHT_ON,
@@ -1496,7 +1636,8 @@ private fun ActionPicker(
                 modifier = Modifier.padding(start = 32.dp)
             )
         }
-        if (allowFlow) {
+        }
+        if (showFlows) {
             ActionOption(
                 label = "Run a flow",
                 selected = action.type == ActionType.RUN_FLOW,
