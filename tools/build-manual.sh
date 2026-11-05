@@ -49,7 +49,7 @@ done
 echo "== aapt2 link (also generates R.java) =="
 # aapt2 needs the package in the manifest itself (Gradle normally injects
 # the package, versionCode and versionName from the Gradle config).
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="3"\n    android:versionName="1.0.2">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="4"\n    android:versionName="1.0.3">|' \
   app/src/main/AndroidManifest.xml > "$BUILD/AndroidManifest.xml"
 # shellcheck disable=SC2086
 "$AAPT2" link \
