@@ -619,9 +619,9 @@ private fun GestureListScreen(
                         Feedback(vibrateOnRun, soundOnRun)
                     )
                 },
-                onSettings = {
+                onAddSample = {
                     detail = null
-                    onSettings()
+                    onAddSample(live)
                 }
             )
         }
@@ -758,9 +758,11 @@ private fun appLabel(packageName: String): String? {
  * on a card, an action row (edit, enable/disable, delete, test), and
  * the name + description below. Edit opens the edit dialog, the toggle
  * enables/disables the gesture, delete asks for confirmation, and
- * test runs the gesture's action. A Settings button at the bottom is
- * one of the two ways into Settings now that the home page has no
- * gear (v1.0.11); the other is the gear on the overlay pad.
+ * test runs the gesture's action. An "Add sample" button at the
+ * bottom (v1.2.2) opens the sample-capture pad for this gesture; it
+ * is disabled once the gesture already has 3 samples. Settings lives
+ * on the gear at the top right of the home screen, so the sheet no
+ * longer links to it.
  */
 @Composable
 private fun GestureDetailSheet(
@@ -769,7 +771,7 @@ private fun GestureDetailSheet(
     onToggleEnabled: () -> Unit,
     onDelete: () -> Unit,
     onTest: () -> Unit,
-    onSettings: () -> Unit
+    onAddSample: () -> Unit
 ) {
     val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
         appLabel(gesture.payload)
@@ -866,12 +868,13 @@ private fun GestureDetailSheet(
         }
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedButton(
-            onClick = onSettings,
+            onClick = onAddSample,
+            enabled = gesture.sampleCount() < Gesture.MAX_SAMPLES,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Filled.Settings, contentDescription = null)
+            Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Settings")
+            Text("Add sample")
         }
     }
 }
