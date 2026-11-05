@@ -49,7 +49,7 @@ done
 echo "== aapt2 link (also generates R.java) =="
 # aapt2 needs the package in the manifest itself (Gradle normally injects
 # the package, versionCode and versionName from the Gradle config).
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="1"\n    android:versionName="1.0.0">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="2"\n    android:versionName="1.0.1">|' \
   app/src/main/AndroidManifest.xml > "$BUILD/AndroidManifest.xml"
 # shellcheck disable=SC2086
 "$AAPT2" link \
@@ -83,15 +83,39 @@ KOTLIN_LIB="$(dirname "$KOTLINC")/../lib"
   $(cat build/deps/classpath.txt | tr ':' ' ') \
   "$KOTLIN_LIB/kotlin-stdlib.jar"
 
-echo "== package dex into apk =="
-python3 - "$BUILD/base-unaligned.apk" "$BUILD/dex" <<'PYEOF'
-import glob, sys, zipfile, shutil
-apk, dex_dir = sys.argv[1], sys.argv[2]
+echo "== package dex + META-INF/services into apk =="
+# META-INF/services/* must be merged from the dependency jars into the
+# APK: ServiceLoader (used by kotlinx-coroutines to find the Android
+# MainDispatcherFactory) only looks inside the APK. v1.0.0 omitted them,
+# so the app crashed on launch with "Module with the Main dispatcher
+# is missing". Same-named service files are concatenated (deduped);
+# signature files are never copied. Runs before zipalign + sign.
+python3 - "$BUILD/base-unaligned.apk" "$BUILD/dex" "$PROJECT/build/deps" "$KOTLIN_LIB/kotlin-stdlib.jar" <<'PYEOF'
+import glob, os, sys, zipfile, shutil
+apk, dex_dir, deps_dir, stdlib = sys.argv[1:5]
 tmp = apk + ".tmp"
 shutil.copyfile(apk, tmp)
+services = {}
+jars = sorted(glob.glob(os.path.join(deps_dir, "*.jar"))) + [stdlib]
+for jar in jars:
+    try:
+        with zipfile.ZipFile(jar) as z:
+            for name in z.namelist():
+                if not name.startswith("META-INF/services/") or name.endswith("/"):
+                    continue
+                data = z.read(name).decode("utf-8", "replace")
+                lines = services.setdefault(name, [])
+                for line in data.splitlines():
+                    line = line.strip()
+                    if line and line not in lines:
+                        lines.append(line)
+    except zipfile.BadZipFile:
+        continue
 with zipfile.ZipFile(tmp, "a", zipfile.ZIP_DEFLATED) as z:
     for dex in sorted(glob.glob(dex_dir + "/classes*.dex")):
         z.write(dex, dex.split("/")[-1])
+    for name, lines in sorted(services.items()):
+        z.writestr(name, "\n".join(lines) + "\n")
 shutil.move(tmp, apk)
 PYEOF
 
