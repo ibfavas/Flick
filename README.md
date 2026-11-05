@@ -99,6 +99,16 @@ Done in v1.0.5: multi-stroke gestures ($N recognizer), app-picker crash
 fix (dedupe by package), minimal dark UI redesign (gesture list + floating
 add button, no bottom tabs).
 
+Done in v1.0.6: the Flick brand (logo: minimal white swoosh ending in a
+cyan dot on deep teal; wordmark: rounded lowercase "flick" with the dot of
+the i in cyan; deep teal theme with a cyan accent), a transparent touch
+pad (see-through overlay with only a very light dim, stroke outlined so
+it reads over any background, close and settings buttons), smooth
+animations (screen transitions, list item enter/move, press feedback,
+pad fade in/out, animated settings), and optimization (cached stroke
+paths in the pad, lazy lists, stable state). The launcher icon is the
+new logo.
+
 ## Originality
 
 Flick is 100% original code written for this project. It shares a concept

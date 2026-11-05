@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0B1F3A</color>
+    <!-- Deep teal sampled from the Flick logo, behind the adaptive icon
+         foreground. The foreground is the logo itself, so this only shows
+         at the corners outside the icon's rounded shape. -->
+    <color name="ic_launcher_background">#01333A</color>
 </resources>

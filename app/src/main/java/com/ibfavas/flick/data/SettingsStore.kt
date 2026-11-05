@@ -18,7 +18,7 @@ class SettingsStore(private val context: Context) {
     companion object {
         private val STROKE_COLOR = longPreferencesKey("stroke_color")
         private val STROKE_WIDTH = floatPreferencesKey("stroke_width")
-        const val DEFAULT_COLOR: Long = 0xFFFF3B30 // bright red
+        const val DEFAULT_COLOR: Long = 0xFF00E5FF // brand cyan
         const val DEFAULT_WIDTH: Float = 10f
     }
 

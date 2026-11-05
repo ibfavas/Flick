@@ -10,6 +10,21 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -70,13 +85,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
 import com.ibfavas.flick.data.ActionType
 import com.ibfavas.flick.data.Gesture
@@ -89,37 +112,49 @@ import kotlinx.coroutines.launch
 private enum class Screen { LIST, RECORD, TEST, SETTINGS }
 
 /**
- * Flick, redesigned: minimal and dark. The home screen is the gesture list
- * plus a floating add button and a settings entry. No bottom navigation.
- * The draw pad is the centerpiece: a full-screen pad for testing gestures,
- * and a large pad on the record screen.
+ * Flick v1.0.6: the new brand. Deep teal, white text, one bright cyan
+ * accent; the wordmark is the header. The home screen is the gesture
+ * list plus a floating add button and a settings entry. No bottom
+ * navigation. The draw pad is the centerpiece: a full-screen pad for
+ * testing gestures, and a large pad on the record screen.
  */
 @Composable
-fun MainScreen(dao: GestureDao, settings: SettingsStore) {
-    var screen by remember { mutableStateOf(Screen.LIST) }
+fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean = false) {
+    var screen by remember { mutableStateOf(if (openSettings) Screen.SETTINGS else Screen.LIST) }
     BackHandler(enabled = screen != Screen.LIST) { screen = Screen.LIST }
-    when (screen) {
-        Screen.LIST -> GestureListScreen(
-            dao = dao,
-            onRecord = { screen = Screen.RECORD },
-            onTest = { screen = Screen.TEST },
-            onSettings = { screen = Screen.SETTINGS }
-        )
-        Screen.RECORD -> RecordScreen(
-            dao = dao,
-            settings = settings,
-            onBack = { screen = Screen.LIST },
-            onSaved = { screen = Screen.LIST }
-        )
-        Screen.TEST -> TestPadScreen(
-            dao = dao,
-            settings = settings,
-            onBack = { screen = Screen.LIST }
-        )
-        Screen.SETTINGS -> SettingsScreen(
-            settings = settings,
-            onBack = { screen = Screen.LIST }
-        )
+    AnimatedContent(
+        targetState = screen,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(220)) +
+                slideInHorizontally(animationSpec = tween(220)) { it / 5 }) togetherWith
+            (fadeOut(animationSpec = tween(180)) +
+                slideOutHorizontally(animationSpec = tween(180)) { -it / 5 })
+        },
+        label = "screen"
+    ) { current ->
+        when (current) {
+            Screen.LIST -> GestureListScreen(
+                dao = dao,
+                onRecord = { screen = Screen.RECORD },
+                onTest = { screen = Screen.TEST },
+                onSettings = { screen = Screen.SETTINGS }
+            )
+            Screen.RECORD -> RecordScreen(
+                dao = dao,
+                settings = settings,
+                onBack = { screen = Screen.LIST },
+                onSaved = { screen = Screen.LIST }
+            )
+            Screen.TEST -> TestPadScreen(
+                dao = dao,
+                settings = settings,
+                onBack = { screen = Screen.LIST }
+            )
+            Screen.SETTINGS -> SettingsScreen(
+                settings = settings,
+                onBack = { screen = Screen.LIST }
+            )
+        }
     }
 }
 
@@ -143,7 +178,8 @@ private fun GestureListScreen(
             FloatingActionButton(
                 onClick = onRecord,
                 containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White
+                contentColor = FlickBrand.CyanDark,
+                modifier = Modifier.pressScale()
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add gesture")
             }
@@ -157,22 +193,24 @@ private fun GestureListScreen(
                 .padding(top = 12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Flick",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
+                Image(
+                    painter = painterResource(R.drawable.flick_wordmark),
+                    contentDescription = "Flick",
+                    contentScale = ContentScale.FillHeight,
+                    modifier = Modifier.height(34.dp)
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onSettings) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings")
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onTest,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
+                    .pressScale()
             ) {
                 Icon(Icons.Filled.Create, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -206,34 +244,21 @@ private fun GestureListScreen(
                 }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
                     items(gestures, key = { it.id }) { gesture ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = { editing = gesture },
-                                    onLongClick = { deleting = gesture }
-                                )
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(animationSpec = tween(250)) +
+                                expandVertically(animationSpec = tween(250)),
+                            modifier = Modifier.animateItem()
                         ) {
-                            ActionIcon(gesture)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    gesture.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    gestureDescription(gesture),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            GestureCard(
+                                gesture = gesture,
+                                onEdit = { editing = gesture },
+                                onDelete = { deleting = gesture }
+                            )
                         }
                     }
                 }
@@ -271,6 +296,96 @@ private fun GestureListScreen(
                 TextButton(onClick = { deleting = null }) { Text("Cancel") }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GestureCard(
+    gesture: Gesture,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val description = remember(gesture) { gestureDescription(gesture) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .combinedClickable(onClick = onEdit, onLongClick = onDelete)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GestureGlyph(
+            template = gesture.template,
+            modifier = Modifier.size(56.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                gesture.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        ActionIcon(gesture)
+    }
+}
+
+/**
+ * The gesture itself, drawn small: the stored template strokes scaled
+ * into a chip, in brand cyan. Each card shows the shape to draw, so the
+ * list is readable at a glance.
+ */
+@Composable
+private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
+    val strokes = remember(template) { Recognizer.strokesFromString(template) }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(FlickBrand.TealSurfaceVariant)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+            if (strokes.isEmpty()) return@Canvas
+            var minX = Float.MAX_VALUE
+            var maxX = Float.MIN_VALUE
+            var minY = Float.MAX_VALUE
+            var maxY = Float.MIN_VALUE
+            for (stroke in strokes) {
+                for (p in stroke) {
+                    if (p.x < minX) minX = p.x
+                    if (p.x > maxX) maxX = p.x
+                    if (p.y < minY) minY = p.y
+                    if (p.y > maxY) maxY = p.y
+                }
+            }
+            val bw = (maxX - minX).coerceAtLeast(1f)
+            val bh = (maxY - minY).coerceAtLeast(1f)
+            val scale = minOf(size.width / bw, size.height / bh) * 0.8f
+            val ox = (size.width - bw * scale) / 2f - minX * scale
+            val oy = (size.height - bh * scale) / 2f - minY * scale
+            val style = Stroke(
+                width = 3.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
+            for (stroke in strokes) {
+                if (stroke.size < 2) continue
+                val path = Path().apply {
+                    moveTo(stroke[0].x * scale + ox, stroke[0].y * scale + oy)
+                    for (i in 1 until stroke.size) {
+                        lineTo(stroke[i].x * scale + ox, stroke[i].y * scale + oy)
+                    }
+                }
+                drawPath(path, FlickBrand.Cyan, style = style)
+            }
+        }
     }
 }
 
@@ -422,7 +537,11 @@ private fun RecordScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(340.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        RoundedCornerShape(16.dp)
+                    )
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surface)
             ) {
@@ -469,6 +588,7 @@ private fun RecordScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
+                    .pressScale()
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -682,7 +802,11 @@ private fun TestPadScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                    RoundedCornerShape(16.dp)
+                )
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surface)
         ) {
@@ -721,7 +845,13 @@ private fun TestPadScreen(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        AnimatedVisibility(
+            visible = result != null,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut()
+        ) {
+            result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             enabled = matched != null,
@@ -729,6 +859,7 @@ private fun TestPadScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
+                .pressScale()
         ) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
@@ -738,6 +869,16 @@ private fun TestPadScreen(
 }
 
 // ---------------------------------------------------------------- settings
+
+/** Stroke colours. Cyan first: it is the brand colour and the default. */
+private val STROKE_COLORS = listOf(
+    0xFF00E5FFL to "Cyan",
+    0xFFFFFFFFL to "White",
+    0xFF4CAF50L to "Green",
+    0xFFFFC107L to "Amber",
+    0xFF8ECDF0L to "Blue",
+    0xFFFF3B30L to "Red"
+)
 
 @Composable
 private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
@@ -756,15 +897,6 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> cameraGranted = granted }
-
-    val colors = listOf(
-        0xFFFF3B30L to "Red",
-        0xFFEDE6D0L to "Cream",
-        0xFF8ECDF0L to "Blue",
-        0xFFFFFFFFL to "White",
-        0xFF4CAF50L to "Green",
-        0xFFFFC107L to "Amber"
-    )
 
     LazyColumn(
         modifier = Modifier
@@ -787,28 +919,15 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
             }
             Text("Stroke colour", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                colors.forEach { (value, name) ->
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(value))
-                            .border(
-                                width = if (strokeColor == value) 3.dp else 1.dp,
-                                color = if (strokeColor == value) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.outline
-                                },
-                                shape = CircleShape
-                            )
-                            .clickable {
-                                scope.launch { settings.setStrokeColor(value) }
-                            }
+                STROKE_COLORS.forEach { (value, name) ->
+                    StrokeColorChip(
+                        value = value,
+                        selected = strokeColor == value,
+                        onClick = { scope.launch { settings.setStrokeColor(value) } }
                     )
                 }
             }
-            Text("Selected: ${colors.firstOrNull { it.first == strokeColor }?.second ?: "Custom"}")
+            Text("Selected: ${STROKE_COLORS.firstOrNull { it.first == strokeColor }?.second ?: "Custom"}")
         }
         item {
             Text("Stroke width: ${strokeWidth.toInt()} px", style = MaterialTheme.typography.titleMedium)
@@ -850,4 +969,37 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun StrokeColorChip(value: Long, selected: Boolean, onClick: () -> Unit) {
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.outline
+        },
+        label = "chipBorder"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.18f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "chipScale"
+    )
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(Color(value))
+            .border(
+                width = if (selected) 3.dp else 1.dp,
+                color = borderColor,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+    )
 }

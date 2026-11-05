@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +45,10 @@ private const val STROKE_TIMEOUT_MS = 900L
  * within [STROKE_TIMEOUT_MS] the gesture finishes and [onGestureFinished]
  * receives all strokes. Done finishes immediately, Clear wipes the pad.
  * Every stroke drawn so far stays visible.
+ *
+ * Performance: finished strokes keep a cached [Path]; only the live stroke
+ * is extended as the finger moves. Rebuilding every stroke's Path on every
+ * frame made the pad stutter on long gestures.
  */
 @Composable
 fun DrawPad(
@@ -51,10 +56,18 @@ fun DrawPad(
     strokeWidth: Float,
     modifier: Modifier = Modifier,
     onGestureFinished: (List<List<StrokePoint>>) -> Unit,
-    onCleared: () -> Unit = {}
+    onCleared: () -> Unit = {},
+    /**
+     * Draw a dark outline under the stroke so it stays readable over any
+     * background. Used by the transparent pad, which sits on top of
+     * whatever the user was doing.
+     */
+    strokeOutline: Boolean = false
 ) {
     var strokes by remember { mutableStateOf(listOf<List<Offset>>()) }
     var currentStroke by remember { mutableStateOf(listOf<Offset>()) }
+    val strokePaths = remember { mutableStateListOf<Path>() }
+    var currentPath by remember { mutableStateOf<Path?>(null) }
     val scope = rememberCoroutineScope()
     var timerJob by remember { mutableStateOf<Job?>(null) }
 
@@ -64,6 +77,8 @@ fun DrawPad(
         val done = strokes
         strokes = emptyList()
         currentStroke = emptyList()
+        strokePaths.clear()
+        currentPath = null
         val totalPoints = done.sumOf { it.size }
         if (done.isNotEmpty() && totalPoints >= 2) {
             onGestureFinished(done.map { points -> points.map { StrokePoint(it.x, it.y) } })
@@ -83,6 +98,8 @@ fun DrawPad(
         timerJob = null
         strokes = emptyList()
         currentStroke = emptyList()
+        strokePaths.clear()
+        currentPath = null
         onCleared()
     }
 
@@ -103,49 +120,64 @@ fun DrawPad(
                             timerJob?.cancel()
                             timerJob = null
                             currentStroke = listOf(offset)
+                            currentPath = Path().apply { moveTo(offset.x, offset.y) }
                         },
                         onDrag = { change, _ ->
                             change.consume()
                             currentStroke = currentStroke + change.position
+                            currentPath?.lineTo(change.position.x, change.position.y)
                         },
                         onDragEnd = {
                             if (currentStroke.size >= 2 && strokeLength(currentStroke) > 4f) {
                                 strokes = strokes + listOf(currentStroke)
+                                currentPath?.let { strokePaths.add(it) }
                             }
                             currentStroke = emptyList()
+                            currentPath = null
                             if (strokes.isNotEmpty()) armTimer()
                         },
                         onDragCancel = {
                             currentStroke = emptyList()
+                            currentPath = null
                             if (strokes.isNotEmpty()) armTimer()
                         }
                     )
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val visible = strokes + listOf(currentStroke).filter { it.size >= 2 }
-                for (points in visible) {
-                    if (points.size < 2) continue
-                    val path = Path().apply {
-                        moveTo(points[0].x, points[0].y)
-                        for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
-                    }
-                    drawPath(
-                        path = path,
-                        color = strokeColor,
-                        style = Stroke(
-                            width = strokeWidth,
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
+                val outlineStyle = Stroke(
+                    width = strokeWidth + 6f,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+                val strokeStyle = Stroke(
+                    width = strokeWidth,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+                fun drawStroke(path: Path) {
+                    if (strokeOutline) {
+                        drawPath(
+                            path = path,
+                            color = Color.Black.copy(alpha = 0.35f),
+                            style = outlineStyle
                         )
-                    )
+                    }
+                    drawPath(path = path, color = strokeColor, style = strokeStyle)
+                }
+                for (path in strokePaths) drawStroke(path)
+                if (currentStroke.size >= 2) {
+                    currentPath?.let { drawStroke(it) }
                 }
             }
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                    RoundedCornerShape(16.dp)
+                )
                 .padding(horizontal = 12.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

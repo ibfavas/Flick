@@ -14,5 +14,13 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@style/FlickDrawAnimation</item>
+    </style>
+
+    <!-- The pad fades in and out instead of sliding, so the screen
+         underneath stays put while the overlay appears and disappears. -->
+    <style name="FlickDrawAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:windowEnterAnimation">@android:anim/fade_in</item>
+        <item name="android:windowExitAnimation">@android:anim/fade_out</item>
     </style>
 </resources>

@@ -6,22 +6,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * Flick is always dark: a near-black background, quiet grey surfaces, and
- * one bright red accent for the stroke, the add button and key actions.
- * The look stays minimal on purpose, the gesture list and the draw pad
- * are the app, nothing else competes with them.
+ * Flick's own brand (v1.0.6): deep teal, white text, one bright cyan
+ * accent. The logo is a minimal white swoosh ending in a cyan dot on a
+ * deep teal background; the wordmark is rounded lowercase "flick" with
+ * the dot of the i in cyan. The app is always dark.
  */
+object FlickBrand {
+    val TealBackground = Color(0xFF07272B)
+    val TealSurface = Color(0xFF0C3439)
+    val TealSurfaceVariant = Color(0xFF143F44)
+    val Cyan = Color(0xFF00E5FF)
+    val CyanDark = Color(0xFF00323A)
+    val TextWhite = Color(0xFFEDF7F7)
+    val TextMuted = Color(0xFF9FC0C0)
+    val Outline = Color(0xFF2C5055)
+}
+
 private val FlickColors = darkColorScheme(
-    primary = Color(0xFFFF3B30),
-    onPrimary = Color.White,
+    primary = FlickBrand.Cyan,
+    onPrimary = FlickBrand.CyanDark,
     secondary = Color(0xFF8ECDF0),
-    background = Color(0xFF0A0A0B),
-    surface = Color(0xFF17181B),
-    surfaceVariant = Color(0xFF232529),
-    onBackground = Color(0xFFF2F2F2),
-    onSurface = Color(0xFFF2F2F2),
-    onSurfaceVariant = Color(0xFF9A9CA0),
-    outline = Color(0xFF33353A)
+    background = FlickBrand.TealBackground,
+    surface = FlickBrand.TealSurface,
+    surfaceVariant = FlickBrand.TealSurfaceVariant,
+    onBackground = FlickBrand.TextWhite,
+    onSurface = FlickBrand.TextWhite,
+    onSurfaceVariant = FlickBrand.TextMuted,
+    outline = FlickBrand.Outline,
+    error = Color(0xFFFF8A80)
 )
 
 @Composable

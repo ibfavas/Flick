@@ -10,14 +10,21 @@ import com.ibfavas.flick.ui.FlickTheme
 import com.ibfavas.flick.ui.MainScreen
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** Launch extra: open the settings screen first, used by the
+         *  transparent pad's gear button. */
+        const val EXTRA_OPEN_SETTINGS = "open_settings"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             val dao = DatabaseProvider.get(this).gestureDao()
             val settings = SettingsStore(this)
+            val openSettings = intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false)
             setContent {
                 FlickTheme {
-                    MainScreen(dao = dao, settings = settings)
+                    MainScreen(dao = dao, settings = settings, openSettings = openSettings)
                 }
             }
         } catch (e: Throwable) {

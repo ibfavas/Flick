@@ -11,3 +11,8 @@
 *.keystore
 *.jks
 local.properties
+
+# Design working files: only the approved brand sources are committed.
+/concepts/*
+!/concepts/media-generation-flick-logo-3-swoosh-0-2eb8abda-18a1-4bf6-acd9-909d6e881fa8.webp
+!/concepts/media-generation-flick-font-2-normal-i-cyan-dot-0-28207d6a-57be-4232-b776-b1b6b05b90f3.webp
