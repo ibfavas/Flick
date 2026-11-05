@@ -73,8 +73,10 @@ import com.ibfavas.flick.ui.ActionIcon
 import com.ibfavas.flick.ui.DrawPad
 import com.ibfavas.flick.ui.FlickBrand
 import com.ibfavas.flick.ui.FlickTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Frosted-glass full-screen activity launched by the invisible widget and
@@ -180,6 +182,21 @@ private fun DrawScreen(
     var matched by remember { mutableStateOf<Gesture?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
+    // The gesture library, observed so the prepared templates stay
+    // fresh. Prepared once per library change (v1.1.0): normalising
+    // every template variant on every recognition was the pad's main
+    // CPU cost, and recognition now runs off the main thread.
+    val gestures by dao.observeAll().collectAsState(initial = emptyList())
+    val prepared = remember(gestures) {
+        Recognizer.prepareTemplates(
+            gestures.filter { it.enabled }.flatMap { it.multiTemplates() }
+        )
+    }
+    val templateToGesture = remember(gestures) {
+        gestures.flatMap { gesture ->
+            gesture.multiTemplates().map { it to gesture }
+        }.toMap()
+    }
     LaunchedEffect(Unit) { visible = true }
     // Smooth close (v1.0.12): the pad never snaps shut. Every close
     // goes through closeSmoothly(), which starts the fade-out (and a
@@ -267,17 +284,23 @@ private fun DrawScreen(
                     if (matched != null) return@DrawPad
                     scope.launch {
                         try {
-                            // Disabled gestures never run: they are left
-                            // out of the match entirely (v1.0.10).
-                            val gestures = dao.getAll().filter { it.enabled }
-                            // Every recorded sample of every gesture: the
-                            // recognizer matches against all of them and
-                            // takes the best score.
-                            val templates = gestures.flatMap { it.multiTemplates() }
-                            val match = Recognizer.recognizeMulti(raw, templates)
-                            val gesture = match?.let { m ->
-                                gestures.firstOrNull { it.name == m.template.name }
+                            // Recognition is CPU work: off the main
+                            // thread (v1.1.0), against the prepared
+                            // library. Disabled gestures never run:
+                            // they are left out of the match entirely
+                            // (v1.0.10).
+                            val match = withContext(Dispatchers.Default) {
+                                Recognizer.recognizeMultiPrepared(raw, prepared)
                             }
+                            // The match carries its source template, so
+                            // the gesture is found even when two gestures
+                            // share a name; the name lookup is the
+                            // fallback for gestures recorded before
+                            // v1.1.0.
+                            val gesture = match?.source?.let { templateToGesture[it] }
+                                ?: match?.let { m ->
+                                    gestures.firstOrNull { it.name == m.template.name }
+                                }
                             if (gesture == null) {
                                 // No match: close smoothly. No message,
                                 // no prompt, no setting for it (v1.0.11).

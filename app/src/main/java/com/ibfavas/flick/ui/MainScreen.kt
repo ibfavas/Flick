@@ -549,7 +549,10 @@ private fun GestureListScreen(
             onDismiss = { editing = null },
             onSave = { name, type, payload ->
                 scope.launch {
-                    dao.update(gesture.copy(name = name, actionType = type, payload = payload))
+                    // Duplicate names made recognition ambiguous, so
+                    // a rename that collides gets auto-suffixed.
+                    val unique = Gesture.uniqueName(name, gestures, excludeId = gesture.id)
+                    dao.update(gesture.copy(name = unique, actionType = type, payload = payload))
                     editing = null
                 }
             }
@@ -1297,7 +1300,7 @@ private fun RecordScreen(
                     scope.launch {
                         dao.insert(
                             Gesture(
-                                name = name.trim(),
+                                name = Gesture.uniqueName(name, dao.getAll()),
                                 template = Recognizer.strokesToString(initialSamples[0]),
                                 actionType = action.type,
                                 payload = action.payload,
@@ -1410,8 +1413,12 @@ private fun AddSampleScreen(
                 enabled = captured != null,
                 onClick = {
                     scope.launch {
-                        val extras = gesture.allTemplates().drop(1) +
-                            Recognizer.strokesToString(captured!!)
+                        // Defensive cap: allTemplates() already caps at
+                        // MAX_SAMPLES, but never store more than the
+                        // two extra slots even if the data is corrupt.
+                        val extras = (gesture.allTemplates().drop(1) +
+                            Recognizer.strokesToString(captured!!))
+                            .take(Gesture.MAX_SAMPLES - 1)
                         dao.update(
                             gesture.copy(extraTemplates = extras.joinToString("\n"))
                         )
@@ -1455,6 +1462,22 @@ private fun ActionPicker(
     var showAppPicker by remember { mutableStateOf(false) }
     var pickedAppLabel by remember { mutableStateOf<String?>(null) }
     var pickedContactLabel by remember { mutableStateOf<String?>(null) }
+
+    // When editing an existing gesture the payload is a package name
+    // and no label was picked yet in this dialog, so the button
+    // showed the raw package name. Resolve the label once for the
+    // current payload; picking a new app sets the label directly.
+    LaunchedEffect(action.type, action.payload) {
+        if (action.type == ActionType.LAUNCH_APP && action.payload.isNotBlank()) {
+            val label = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.packageManager.getApplicationInfo(action.payload, 0)
+                        .loadLabel(context.packageManager).toString()
+                }.getOrNull()
+            }
+            if (label != null) pickedAppLabel = label
+        }
+    }
 
     // Contact picking needs two permissions: READ_CONTACTS to read the
     // contact, CALL_PHONE to place the call. Both are requested together;
@@ -2055,8 +2078,31 @@ private fun TestPadScreen(
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
     )
-    var result by remember { mutableStateOf<String?>(null) }
     var matched by remember { mutableStateOf<Gesture?>(null) }
+    var score by remember { mutableStateOf<Int?>(null) }
+    var noMatch by remember { mutableStateOf(false) }
+
+    // The gesture library, observed so the prepared templates stay
+    // fresh when gestures are added, edited or deleted. Prepared once
+    // per library change (v1.1.0): normalising every template variant
+    // on every recognition was the pad's main CPU cost.
+    val gestures by dao.observeAll().collectAsState(initial = emptyList())
+    val prepared = remember(gestures) {
+        Recognizer.prepareTemplates(
+            gestures.filter { it.enabled }.flatMap { it.multiTemplates() }
+        )
+    }
+    val templateToGesture = remember(gestures) {
+        gestures.flatMap { gesture ->
+            gesture.multiTemplates().map { it to gesture }
+        }.toMap()
+    }
+    val matchedGesture = matched
+    val matchedAppLabel = if (matchedGesture?.actionType == ActionType.LAUNCH_APP) {
+        appLabel(matchedGesture.payload)
+    } else {
+        null
+    }
 
     Column(
         modifier = Modifier
@@ -2096,30 +2142,29 @@ private fun TestPadScreen(
                 modifier = Modifier.fillMaxSize().padding(8.dp),
                 onGestureFinished = { raw ->
                     scope.launch {
-                        // Disabled gestures never run: they are left
-                        // out of the match entirely (v1.0.10).
-                        val gestures = dao.getAll().filter { it.enabled }
-                        // Every recorded sample of every gesture: the
-                        // recognizer matches against all of them and
-                        // takes the best score.
-                        val templates = gestures.flatMap { it.multiTemplates() }
-                        val match = Recognizer.recognizeMulti(raw, templates)
-                        val gesture = match?.let { m ->
-                            gestures.firstOrNull { it.name == m.template.name }
+                        // Recognition is CPU work: off the main thread
+                        // (v1.1.0), so the pad stays responsive while
+                        // it runs.
+                        val match = withContext(Dispatchers.Default) {
+                            Recognizer.recognizeMultiPrepared(raw, prepared)
                         }
+                        // The match carries its source template, so the
+                        // gesture is found even when two gestures share
+                        // a name; the name lookup is the fallback for
+                        // gestures recorded before v1.1.0.
+                        val gesture = match?.source?.let { templateToGesture[it] }
+                            ?: match?.let { m ->
+                                gestures.firstOrNull { it.name == m.template.name }
+                            }
                         matched = gesture
-                        result = if (gesture == null) {
-                            "No match, try again"
-                        } else {
-                            val score = match?.let { (it.score * 100).toInt() } ?: 0
-                            "Matched ${gesture.name}, $score%\n" +
-                                ActionExecutor.describe(gesture)
-                        }
+                        score = match?.let { (it.score * 100).toInt() }
+                        noMatch = gesture == null
                     }
                 },
                 onCleared = {
-                    result = null
                     matched = null
+                    score = null
+                    noMatch = false
                 },
                 strokeColor = Color(strokeColorArgb),
                 strokeWidth = strokeWidthPx
@@ -2127,11 +2172,17 @@ private fun TestPadScreen(
         }
         Spacer(modifier = Modifier.height(12.dp))
         AnimatedVisibility(
-            visible = result != null,
+            visible = matchedGesture != null || noMatch,
             enter = fadeIn() + slideInVertically { it / 2 },
             exit = fadeOut()
         ) {
-            result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            val text = when {
+                matchedGesture != null -> "Matched ${matchedGesture.name}, ${score ?: 0}%\n" +
+                    gestureDescription(matchedGesture, matchedAppLabel)
+                noMatch -> "No match, try again"
+                else -> ""
+            }
+            Text(text, style = MaterialTheme.typography.bodyMedium)
         }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
@@ -2253,10 +2304,6 @@ private fun SettingsScreen(
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> cameraGranted = granted }
-    var notificationsGranted by remember { mutableStateOf(notificationsGranted(context)) }
-    val notificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> notificationsGranted = granted }
     var overlayGranted by remember { mutableStateOf(overlayGranted(context)) }
     val overlayLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -2303,17 +2350,6 @@ private fun SettingsScreen(
                                 Uri.parse("package:" + context.packageName)
                             )
                         )
-                    }
-                )
-                PermissionRow(
-                    title = "Notifications",
-                    description = "Allow tap-to-draw notification shortcuts.",
-                    granted = notificationsGranted,
-                    grantedText = "Allowed",
-                    onAllow = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
                     }
                 )
                 PermissionRow(
@@ -2525,14 +2561,6 @@ private fun SettingsScreen(
             }
         }
     }
-}
-
-private fun notificationsGranted(context: Context): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-    return ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.POST_NOTIFICATIONS
-    ) == PackageManager.PERMISSION_GRANTED
 }
 
 private fun overlayGranted(context: Context): Boolean =

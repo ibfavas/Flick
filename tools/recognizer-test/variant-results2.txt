@@ -1,0 +1,112 @@
+=== E dir+dtw (round1 winner) ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=378/390 wrong=1 no-match=11 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=385/390 wrong=0 no-match=5 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {c->circle=1}
+=== K dir+dtw+margin.87/.04 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=360/390 wrong=0 no-match=30 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=373/390 wrong=0 no-match=17 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {}
+=== L dir+dtw+margin.87/.03 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=369/390 wrong=0 no-match=21 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=376/390 wrong=0 no-match=14 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {}
+=== M dir+dtw-avg ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=364/390 wrong=0 no-match=26 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=368/390 wrong=0 no-match=22 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=5/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {}
+=== N dir+dtw thr0.88 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=376/390 wrong=1 no-match=13 false=3/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=385/390 wrong=0 no-match=5 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {c->circle=1}
+=== O dir+dtw+perStroke ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=380/390 wrong=1 no-match=9 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=385/390 wrong=0 no-match=5 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {c->circle=1}
+=== P dir+dtw+margin.85/.04 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=362/390 wrong=0 no-match=28 false=6/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=6/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=374/390 wrong=0 no-match=16 false=7/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=7/100
+  WRONG PAIRS (MULTI sloppy, seed 555): {}

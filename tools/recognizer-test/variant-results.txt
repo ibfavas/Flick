@@ -1,0 +1,150 @@
+=== A baseline ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=1/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=182/390 wrong=0 no-match=208 false=3/100
+ SINGLE (reversed):
+  REV: correct=0/390 wrong=0 no-match=390 false=1/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=185/390 wrong=0 no-match=205 false=4/100
+ MULTI (reversed):
+  REV: correct=0/390 wrong=0 no-match=390 false=5/100
+=== B dir ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=341/390 wrong=0 no-match=49 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=352/390 wrong=0 no-match=38 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=5/100
+=== C dir+margin.80/.05 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=8/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=350/390 wrong=0 no-match=40 false=5/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=9/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=11/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=352/390 wrong=0 no-match=38 false=7/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=12/100
+=== D dir+margin.82/.04 ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=347/390 wrong=0 no-match=43 false=5/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=5/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=6/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=356/390 wrong=0 no-match=34 false=6/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=8/100
+=== E dir+dtw ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=378/390 wrong=1 no-match=11 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=385/390 wrong=0 no-match=5 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=6/100
+=== F dir+prot ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=8/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=370/390 wrong=7 no-match=13 false=8/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=9/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=10/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=375/390 wrong=7 no-match=8 false=9/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=13/100
+=== G dir+perStroke ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=2/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ SINGLE (sloppy):
+  SLOPPY: correct=352/390 wrong=0 no-match=38 false=4/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=2/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=4/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=359/390 wrong=0 no-match=31 false=4/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=5/100
+=== H dir+trim ===
+ SINGLE (orig):
+  ORIG: correct=308/390 wrong=12 no-match=70 false=3/100
+  TILT: correct=88/104 wrong=0 no-match=16
+ SINGLE (sloppy):
+  SLOPPY: correct=252/390 wrong=7 no-match=131 false=4/100
+ SINGLE (reversed):
+  REV: correct=339/390 wrong=0 no-match=51 false=2/100
+ MULTI (orig):
+  ORIG: correct=316/390 wrong=14 no-match=60 false=4/100
+  TILT: correct=88/104 wrong=0 no-match=16
+ MULTI (sloppy):
+  SLOPPY: correct=273/390 wrong=11 no-match=106 false=4/100
+ MULTI (reversed):
+  REV: correct=342/390 wrong=0 no-match=48 false=5/100
+=== I dir+margin+dtw ===
+ SINGLE (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=18/100
+  TILT: correct=102/104 wrong=0 no-match=2
+ SINGLE (sloppy):
+  SLOPPY: correct=358/390 wrong=1 no-match=31 false=9/100
+ SINGLE (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=14/100
+ MULTI (orig):
+  ORIG: correct=390/390 wrong=0 no-match=0 false=19/100
+  TILT: correct=104/104 wrong=0 no-match=0
+ MULTI (sloppy):
+  SLOPPY: correct=365/390 wrong=0 no-match=25 false=9/100
+ MULTI (reversed):
+  REV: correct=390/390 wrong=0 no-match=0 false=13/100
+=== J dir+margin+trim ===
+ SINGLE (orig):
+  ORIG: correct=330/390 wrong=13 no-match=47 false=7/100
+  TILT: correct=93/104 wrong=0 no-match=11
+ SINGLE (sloppy):
+  SLOPPY: correct=292/390 wrong=10 no-match=88 false=5/100
+ SINGLE (reversed):
+  REV: correct=362/390 wrong=0 no-match=28 false=6/100
+ MULTI (orig):
+  ORIG: correct=336/390 wrong=14 no-match=40 false=11/100
+  TILT: correct=93/104 wrong=0 no-match=11
+ MULTI (sloppy):
+  SLOPPY: correct=286/390 wrong=14 no-match=90 false=6/100
+ MULTI (reversed):
+  REV: correct=361/390 wrong=0 no-match=29 false=11/100

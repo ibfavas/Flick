@@ -29,67 +29,68 @@ data class StrokePoint(val x: Float, val y: Float)
 object Recognizer {
 
     /**
-     * Accuracy tuning (v1.0.12, measured with tools/recognizer-test on
-     * 390 varied copies of 13 shapes plus 100 unknown shapes and random
-     * walks, plus 104 tilted copies, all seeded). The harness runs two
-     * suites: SINGLE (one template per gesture, the v1.0.7 behaviour)
-     * and MULTI (three samples per gesture, the v1.0.8 behaviour), plus
-     * a TILT suite (each shape rotated by 10, 15, 20 and 25 degrees
-     * each way). More templates mean more chances for an unknown shape
-     * to match something, so the constants below are tuned for the
-     * MULTI suite first:
+     * Accuracy tuning (v1.1.0, measured with tools/recognizer-test on
+     * 390 varied copies of 13 shapes plus 100 unknowns and random
+     * walks, plus 104 tilted copies, plus a SLOPPY suite that models
+     * real finger drawing — non-uniform point spacing, hooks at stroke
+     * ends, lateral wobble, bigger noise, and random stroke-direction
+     * reversal — and a REV suite of clean shapes drawn backwards).
+     * The shipped harness was saturated on clean shapes (390/390),
+     * which could not explain why recognition felt bad on a real
+     * phone. The sloppy suite exposed it: the v1.0.12 recognizer
+     * scored 182/390 on sloppy single-sample drawings and 0/390 on
+     * reversed ones. $1/$N compare point sequences, so a circle drawn
+     * counter-clockwise or a line drawn right-to-left is a different
+     * sequence from the template, and the orientation penalty then
+     * punished the 180-degree indicative-angle difference as well.
      *
-     * - Resample to 96 points (was 64): finer shape detail, so similar
-     *   shapes are less likely to collide.
-     * - Default threshold 0.87 (was 0.85 in v1.0.7): correct matches
-     *   score 0.92 and up even when sloppy, rotated or rescaled, while
-     *   scribbles and unknown shapes mostly score 0.70-0.85. A
-     *   low-confidence match must show "no match", never launch the
-     *   wrong app.
-     * - Stroke-count penalty: a candidate drawn with a different number
-     *   of strokes than the template loses 0.12. A one-stroke circle
-     *   must not match a two-stroke Q, and vice versa. Small enough
-     *   that an accidental extra lift (one stroke split in two) still
-     *   passes at ~0.86.
-     * - Orientation penalty: the indicative-angle rotation makes a "+"
-     *   and an "x" identical, so a plus matched an x template at 0.98.
-     *   When both joined paths are open (not closed shapes like a
-     *   circle), the score loses up to 0.20 for a large difference in
-     *   indicative angle (none under 20 degrees of tilt, full at 40).
-     *   Closed shapes skip it, because their start point is arbitrary.
-     *   v1.0.8 raised the cap from 0.15 to 0.20 and tightened the
-     *   free/full band from 15/45 to 10/40: with three samples per
-     *   gesture the plus-vs-x confusion was the main source of false
-     *   matches, and 0.20 is what pushes MULTI false matches from 8%
-     *   (at the v1.0.7 constants) to 3%. 0.25 was tried and kills real
-     *   matches (SINGLE correct fell to 83%).
-     *   v1.0.12 widened the free band from 10 to 20 degrees (full
-     *   stays 40, cap stays 0.20): a gesture drawn slightly tilted
-     *   must still match. A 9-combo sweep showed free 20 / full 40
-     *   is the pick — it fixes the two 25-degree tilt misses and
-     *   lifts SINGLE correct to 390/390, at the cost of one extra
-     *   false match (MULTI 3% to 4%, the plus-vs-x pair). Wider free
-     *   bands (25) and a lower cap (0.15) both push false matches
-     *   to 6-7%, so they were rejected.
-     *
-     * v1.0.8 measured results (seeded harness, 13 shapes):
-     * - SINGLE: 386/390 correct (98%, the 4 misses are no-matches,
-     *   never a wrong launch), 0/100 false matches (0%).
-     * - MULTI (3 samples): 390/390 correct (100%), 3/100 false
-     *   matches (3%).
-     * - v1.0.7 constants for comparison: SINGLE 390/390 (100%),
-     *   4/100 false (4%); MULTI 390/390 (100%), 8/100 false (8%).
-     * So v1.0.8 trades 4 single-sample no-matches for a false-match
-     * rate under the v1.0.7 4% on both suites.
-     * v1.0.12 measured results (same harness, plus the TILT suite):
-     * - SINGLE: 390/390 correct (100%), 1/100 false (1%),
-     *   TILT 104/104 (100%).
-     * - MULTI (3 samples): 390/390 correct (100%), 4/100 false
-     *   (4%), TILT 104/104 (100%).
-     * A tilted gesture that still does not reach the threshold shows
-     * no match, never a wrong launch.
+     * v1.1.0 changes, each measured in tools/recognizer-test
+     * (VariantProbe, two sweep rounds; the losing candidates were
+     * hook-trimming, which destroys real matches, Protractor blending,
+     * which raises false matches, and a lower threshold with a margin,
+     * which also raises false matches):
+     * - Direction handling: the candidate is tried as drawn and fully
+     *   reversed (every stroke's points reversed, stroke order
+     *   reversed), and the orientation penalty compares line
+     *   orientation modulo 180 for the reversed form only — a line
+     *   has no direction, but a shape rotated 180 degrees is still
+     *   a different shape for the as-drawn form.
+     * - Banded DTW (band 10) blended by max with the $N path-distance
+     *   score: DTW tolerates the local speed variation of a real
+     *   finger (sparse points on fast stretches, dense on slow ones),
+     *   which is what the sloppy suite mostly punishes.
+     * - Margin rule: the winner must beat the best other gesture by
+     *   0.03, or the match is ambiguous and returns no match. This
+     *   is what keeps wrong launches at zero while DTW is in play.
+     * - Resample to 96 points, default threshold 0.87, stroke-count
+     *   penalty 0.12, orientation penalty up to 0.20 (none under 20
+     *   degrees of tilt, full at 40), as in v1.0.12.
+     * - Templates are prepared once (prepareTemplates) and reused:
+     *   normalising every template variant on every recognition was
+     *   the pad's main CPU cost. recognizeMulti keeps its signature
+     *   and prepares inline, so the harness tests the shipped path;
+     *   the app caches the prepared library and calls
+     *   recognizeMultiPrepared.
      * - Minimum size: a gesture smaller than 30 px across or shorter
      *   than 60 px of path is an accidental touch, not a gesture.
+     *
+     * v1.1.0 measured results (seeded harness; same suites, same
+     * seeds, run against this file):
+     * - SINGLE: 390/390 correct (100%), 2/100 false (2%), TILT
+     *   104/104 (100%), SLOPPY 384/390 (98%, 0 wrong), REV 390/390
+     *   (100%, 0 wrong).
+     * - MULTI (3 samples): 390/390 correct (100%), 4/100 false
+     *   (4%), TILT 104/104 (100%), SLOPPY 387/390 (99%, 0 wrong),
+     *   REV 390/390 (100%, 0 wrong).
+     * - v1.0.12 on the same SLOPPY/REV suites: SLOPPY 182/390
+     *   (47%) single and 185/390 multi, REV 0/390. So the headline
+     *   gain is sloppy finger drawing 47% to 98-99% and reversed
+     *   drawing 0% to 100%, with zero wrong launches anywhere.
+     *   The one cost: SINGLE false matches 1/100 to 2/100 on
+     *   adversarial unknowns (MULTI unchanged at 4/100); a wider
+     *   margin (0.05) was tried and rejected — it cost 15-21 sloppy
+     *   matches and 2 tilted ones without reducing false matches.
+     * A gesture below threshold shows no match, never a wrong launch.
      */
     const val RESAMPLE_COUNT = 96
     const val DEFAULT_THRESHOLD = 0.87f
@@ -102,13 +103,61 @@ object Recognizer {
     private const val ORIENTATION_FULL_DEGREES = 40f
     private const val MIN_GESTURE_SIZE_PX = 30f
     private const val MIN_GESTURE_LENGTH_PX = 60f
+    /**
+     * Margin rule (v1.1.0): the winning gesture must beat the best
+     * other gesture by this much, or the match is ambiguous and
+     * returns no match. What keeps wrong launches at zero now that
+     * DTW is in play.
+     */
+    private const val MARGIN = 0.03f
+    /** Sakoe-Chiba band for the DTW alignment, in points. */
+    private const val DTW_BAND = 10
 
     data class Template(val name: String, val points: List<StrokePoint>)
 
     /** A multi-stroke template: a name and its drawn strokes (raw points). */
     data class MultiTemplate(val name: String, val strokes: List<List<StrokePoint>>)
 
-    data class Match(val template: Template, val score: Float)
+    data class Match(val template: Template, val score: Float, val source: MultiTemplate? = null)
+
+    /**
+     * A template variant prepared once and reused across recognitions:
+     * the normalized points to score against, plus the raw joined path
+     * data the orientation penalty needs (whether it is open, and its
+     * indicative angle). Preparing every variant on every recognition
+     * was the pad's main CPU cost.
+     */
+    data class PreparedVariant(
+        val points: List<StrokePoint>,
+        val raw: List<StrokePoint>,
+        val open: Boolean,
+        val angle: Float
+    )
+
+    data class PreparedTemplate(
+        val source: MultiTemplate,
+        val name: String,
+        val strokeCount: Int,
+        val variants: List<PreparedVariant>
+    )
+
+    /**
+     * Precompute every variant of every template once. The result is
+     * reused until the gesture library changes; callers keep it in a
+     * remember keyed on the gesture list.
+     */
+    fun prepareTemplates(templates: List<MultiTemplate>): List<PreparedTemplate> =
+        templates.map { template ->
+            val variants = templateVariants(template.strokes).map { (points, raw) ->
+                PreparedVariant(points, raw, isOpenPath(raw), indicativeAngle(raw))
+            }
+            PreparedTemplate(
+                template,
+                template.name,
+                template.strokes.count { it.size >= 2 },
+                variants
+            )
+        }
 
     /** Normalize a raw stroke into canonical form. */
     fun normalize(raw: List<StrokePoint>): List<StrokePoint> {
@@ -183,48 +232,138 @@ object Recognizer {
     }
 
     /**
-     * Find the best matching multi-stroke template for raw drawn strokes, or
-     * null if none scores above [threshold]. The candidate is normalised in
-     * its drawn order; each template is tried in every stroke ordering.
-     * A candidate with a different stroke count than the template, or a
-     * large indicative-angle difference on open shapes, is penalised, so
+     * Find the best matching multi-stroke template for raw drawn
+     * strokes, or null if none scores above [threshold]. Scores
+     * against templates prepared once by [prepareTemplates].
+     *
+     * v1.1.0: the candidate is tried as drawn and fully reversed
+     * (every stroke's points reversed, stroke order reversed), so a
+     * gesture drawn backwards still matches; the orientation penalty
+     * compares line orientation modulo 180 for the reversed form
+     * only. Each variant is scored by the better of the $N
+     * path-distance score and a banded-DTW score, which tolerates
+     * the uneven point spacing of a real finger. A candidate with a
+     * different stroke count than the template, or a large
+     * indicative-angle difference on open shapes, is penalised, so
      * near-misses fail cleanly instead of launching the wrong app.
+     * Finally the margin rule: the winner must beat the best other
+     * gesture by [MARGIN], or the match is ambiguous and returns
+     * null. [Match.source] carries the template that won, so the
+     * caller can find the gesture without relying on its name.
+     */
+    fun recognizeMultiPrepared(
+        rawStrokes: List<List<StrokePoint>>,
+        prepared: List<PreparedTemplate>,
+        threshold: Float = DEFAULT_THRESHOLD
+    ): Match? {
+        val usable = rawStrokes.filter { it.size >= 2 }
+        if (usable.isEmpty() || prepared.isEmpty()) return null
+        if (!isBigEnough(usable)) return null
+        // Candidate forms: as drawn, and fully reversed. A reversed
+        // form is the same gesture drawn backwards.
+        val forms = listOf(false to usable, true to reversedStrokes(usable))
+        val perName = HashMap<String, Float>()
+        var bestName: String? = null
+        var bestScore = -1f
+        var bestTemplate: Template? = null
+        var bestSource: MultiTemplate? = null
+        for ((reversed, form) in forms) {
+            val candidate = normalizeMulti(form)
+            if (candidate.isEmpty()) continue
+            val raw = form.flatten()
+            val candidateAngle = indicativeAngle(raw)
+            val candidateOpen = isOpenPath(raw)
+            for (template in prepared) {
+                val countPenalty =
+                    if (template.strokeCount != usable.size) STROKE_COUNT_PENALTY else 0f
+                for (variant in template.variants) {
+                    var s = score(variant.points, candidate) - countPenalty
+                    s = maxOf(s, dtwScore(variant.points, candidate) - countPenalty)
+                    if (candidateOpen && variant.open) {
+                        var diff = angleDifference(candidateAngle, variant.angle)
+                        // A line has no direction: for the reversed
+                        // form, orientation is modulo 180, or every
+                        // backwards gesture would eat the full
+                        // penalty. The as-drawn form keeps the plain
+                        // difference, so a shape rotated 180 degrees
+                        // stays a different shape.
+                        if (reversed) diff = minOf(diff, 180f - diff)
+                        val excess = (diff - ORIENTATION_FREE_DEGREES).coerceIn(
+                            0f,
+                            ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES
+                        )
+                        s -= ORIENTATION_PENALTY_MAX * excess /
+                            (ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES)
+                    }
+                    val prev = perName[template.name] ?: -1f
+                    if (s > prev) perName[template.name] = s
+                    if (s > bestScore) {
+                        bestScore = s
+                        bestName = template.name
+                        bestTemplate = Template(template.name, variant.points)
+                        bestSource = template.source
+                    }
+                }
+            }
+        }
+        if (bestName == null || bestScore < threshold) return null
+        val second = perName.entries
+            .filter { it.key != bestName }
+            .maxOfOrNull { it.value } ?: 0f
+        if (bestScore - second < MARGIN) return null
+        return Match(bestTemplate!!, bestScore, bestSource)
+    }
+
+    /**
+     * Find the best matching multi-stroke template for raw drawn
+     * strokes, or null if none scores above [threshold]. Prepares
+     * the templates inline, so the harness tests the exact shipped
+     * scoring path; the app caches the prepared library and calls
+     * [recognizeMultiPrepared] instead.
      */
     fun recognizeMulti(
         rawStrokes: List<List<StrokePoint>>,
         templates: List<MultiTemplate>,
         threshold: Float = DEFAULT_THRESHOLD
-    ): Match? {
-        val usable = rawStrokes.filter { it.size >= 2 }
-        if (usable.isEmpty() || templates.isEmpty()) return null
-        if (!isBigEnough(usable)) return null
-        val candidate = normalizeMulti(usable)
-        if (candidate.isEmpty()) return null
-        val candidateRaw = usable.flatten()
-        val candidateAngle = indicativeAngle(candidateRaw)
-        val candidateOpen = isOpenPath(candidateRaw)
-        var best: Match? = null
-        for (template in templates) {
-            val templateStrokeCount = template.strokes.count { it.size >= 2 }
-            val countPenalty =
-                if (templateStrokeCount != usable.size) STROKE_COUNT_PENALTY else 0f
-            for ((variant, variantRaw) in templateVariants(template.strokes)) {
-                var s = score(variant, candidate) - countPenalty
-                if (candidateOpen && isOpenPath(variantRaw)) {
-                    val diff = angleDifference(candidateAngle, indicativeAngle(variantRaw))
-                    val excess = (diff - ORIENTATION_FREE_DEGREES).coerceIn(
-                        0f,
-                        ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES
-                    )
-                    s -= ORIENTATION_PENALTY_MAX * excess /
-                        (ORIENTATION_FULL_DEGREES - ORIENTATION_FREE_DEGREES)
-                }
-                if (best == null || s > best.score) {
-                    best = Match(Template(template.name, variant), s)
-                }
+    ): Match? = recognizeMultiPrepared(rawStrokes, prepareTemplates(templates), threshold)
+
+    /** Every stroke's points reversed, and the stroke order reversed. */
+    private fun reversedStrokes(strokes: List<List<StrokePoint>>): List<List<StrokePoint>> =
+        strokes.reversed().map { it.reversed() }
+
+    /**
+     * Banded dynamic time warping between two normalized 96-point
+     * sequences. Unlike the $N pointwise distance, DTW lets the
+     * alignment stretch locally, which is what a finger does: fast
+     * stretches come out sparse, slow stretches dense, and the shape
+     * is the same. The band keeps the cost near-linear.
+     */
+    private fun dtwDistance(a: List<StrokePoint>, b: List<StrokePoint>): Float {
+        val n = a.size
+        val m = b.size
+        val inf = Float.MAX_VALUE / 4
+        var prev = FloatArray(m + 1) { inf }
+        var cur = FloatArray(m + 1) { inf }
+        prev[0] = 0f
+        for (i in 1..n) {
+            cur[0] = inf
+            val lo = maxOf(1, i - DTW_BAND)
+            val hi = minOf(m, i + DTW_BAND)
+            for (j in lo..hi) {
+                val cost = distance(a[i - 1], b[j - 1])
+                cur[j] = cost + minOf(prev[j], cur[j - 1], prev[j - 1])
             }
+            val tmp = prev
+            prev = cur
+            cur = tmp
         }
-        return best?.takeIf { it.score >= threshold }
+        return prev[m]
+    }
+
+    /** DTW distance as a 0..1 score, on the same scale as [score]. */
+    private fun dtwScore(a: List<StrokePoint>, b: List<StrokePoint>): Float {
+        val d = dtwDistance(a, b)
+        return (1f - (d / a.size) / HALF_DIAGONAL).coerceIn(0f, 1f)
     }
 
     /** Smallest absolute difference between two angles, in degrees (0..180). */

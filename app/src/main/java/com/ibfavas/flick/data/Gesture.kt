@@ -88,6 +88,24 @@ data class Gesture(
     companion object {
         /** Maximum samples per gesture: the first plus two extras. */
         const val MAX_SAMPLES = 3
+
+        /**
+         * A name no other gesture uses (case-insensitive, ignoring the
+         * gesture with [excludeId] when renaming). Duplicate names
+         * made recognition ambiguous: the pad and the test pad looked
+         * the matched gesture up by name, so the wrong gesture could
+         * run. Returns the base name unchanged when it is free,
+         * otherwise appends " 2", " 3", and so on.
+         */
+        fun uniqueName(base: String, existing: List<Gesture>, excludeId: Long = 0): String {
+            val taken = existing.filter { it.id != excludeId }
+                .map { it.name.trim().lowercase() }.toSet()
+            val name = base.trim()
+            if (name.lowercase() !in taken) return name
+            var n = 2
+            while ("$name $n".lowercase() in taken) n++
+            return "$name $n"
+        }
     }
 }
 

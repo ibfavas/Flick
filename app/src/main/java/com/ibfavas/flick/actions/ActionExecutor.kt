@@ -106,7 +106,11 @@ object ActionExecutor {
         flowScope.launch {
             for ((index, step) in steps.withIndex()) {
                 if (index > 0) delay(600)
-                executeStep(context, step)
+                // One failing step must not kill the rest of the flow
+                // (v1.1.0): a step whose app is uninstalled, or whose
+                // permission was revoked, is skipped and the flow
+                // carries on with the next step.
+                runCatching { executeStep(context, step) }
             }
         }
     }
