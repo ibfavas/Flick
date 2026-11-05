@@ -49,8 +49,18 @@ done
 echo "== aapt2 link (also generates R.java) =="
 # aapt2 needs the package in the manifest itself (Gradle normally injects
 # the package, versionCode and versionName from the Gradle config).
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="4"\n    android:versionName="1.0.3">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="5"\n    android:versionName="1.0.4">|' \
   app/src/main/AndroidManifest.xml > "$BUILD/AndroidManifest.xml"
+# BUG 1 (fixed in v1.0.4): aapt2 link --java generates ONLY the app's R.java.
+# Library resources are linked as bare compiled flats with no package
+# attribution, so no library R.java files are produced — yet library
+# bytecode references its own R classes (e.g. PoolingContainer reads
+# androidx.customview.poolingcontainer.R$id in its <clinit>, which crashed
+# the app on first setContent with NoClassDefFoundError). --extra-packages
+# makes aapt2 emit the same R.java under each library package name, with
+# IDs identical to the app's R.java (verified: 3443 fields, 0 mismatches).
+# Keep this list in sync with the R classes the dex references; enumerate
+# them with: dexdump -d classes*.dex | grep -o 'L[a-z]*/R\$[a-z]*;'
 # shellcheck disable=SC2086
 "$AAPT2" link \
   -o "$BUILD/base-unaligned.apk" \
@@ -59,17 +69,33 @@ sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|
   --min-sdk-version 26 \
   --target-sdk-version 35 \
   --java "$BUILD/gen" \
+  --extra-packages "androidx.activity:androidx.compose.foundation:androidx.compose.material3:androidx.compose.ui:androidx.compose.ui.graphics:androidx.core:androidx.customview.poolingcontainer:androidx.lifecycle.runtime:androidx.lifecycle.viewmodel:androidx.savedstate:androidx.startup" \
   $FLATS
 
+echo "== javac (all generated R.java: app + every library package) =="
+# R.java files contain only int constants, so no classpath is needed.
+# They must be compiled BEFORE kotlinc and land in $BUILD/classes: the
+# Kotlin code references the app's R class (FlickWidgetProvider imports
+# com.ibfavas.flick.R), so kotlinc needs the compiled R classes on its
+# classpath. They also end up in the jar step below, so d8 sees them.
+# shellcheck disable=SC2086
+"$JAVA_HOME/bin/javac" -d "$BUILD/classes" $(find "$BUILD/gen" -name '*.java')
+
 echo "== kotlinc =="
-CP="$(cat build/deps/classpath.txt):$PLATFORM/android.jar"
+CP="$(cat build/deps/classpath.txt):$PLATFORM/android.jar:$BUILD/classes"
+# BUG 2 (fixed in v1.0.4): kotlinc SILENTLY IGNORES .java files.
+# Passing the generated R.java files here compiled only the .kt files —
+# `kotlinc R.java -d out` fails with "no source files" and mixed input
+# drops the .java silently — so v1.0.0–v1.0.3 shipped with NO R class at
+# all in the dex (verified with dexdump: zero R class descriptors, not
+# even com.ibfavas.flick.R). Never pass .java files to kotlinc again;
+# compile them with javac above instead.
 # shellcheck disable=SC2086
 "$KOTLINC" \
   -Xplugin="$COMPOSE_PLUGIN" \
   -cp "$CP" \
   -d "$BUILD/classes" \
-  $(find app/src/main/java -name '*.kt') \
-  $(find "$BUILD/gen" -name '*.java')
+  $(find app/src/main/java -name '*.kt')
 
 echo "== d8 =="
 KOTLIN_LIB="$(dirname "$KOTLINC")/../lib"
