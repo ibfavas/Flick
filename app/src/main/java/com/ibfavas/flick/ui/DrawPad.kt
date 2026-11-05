@@ -234,7 +234,7 @@ fun DrawPad(
                 TextButton(
                     onClick = { finishGesture() },
                     modifier = Modifier.background(
-                        FlickBrand.TealSurface.copy(alpha = 0.85f),
+                        FlickBrand.AmoledSurface.copy(alpha = 0.85f),
                         RoundedCornerShape(20.dp)
                     )
                 ) {
@@ -243,7 +243,7 @@ fun DrawPad(
                 TextButton(
                     onClick = { clearAll() },
                     modifier = Modifier.background(
-                        FlickBrand.TealSurface.copy(alpha = 0.85f),
+                        FlickBrand.AmoledSurface.copy(alpha = 0.85f),
                         RoundedCornerShape(20.dp)
                     )
                 ) {

@@ -10,12 +10,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -39,8 +43,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
 import com.ibfavas.flick.data.DatabaseProvider
 import com.ibfavas.flick.data.Gesture
@@ -58,7 +65,7 @@ import kotlinx.coroutines.launch
  * Frosted-glass full-screen activity launched by the invisible widget and
  * the Quick Settings tile. The pad is glass, not invisible: the screen
  * the user was on shows through faintly, blurred, under a semi-transparent
- * teal tint, so the pad is clearly a surface of its own. The stroke is
+ * black tint, so the pad is clearly a surface of its own. The stroke is
  * brand cyan with a dark outline, so it reads over any background.
  *
  * The user draws a gesture; on a match the action runs and the activity
@@ -161,31 +168,29 @@ private fun DrawScreen(
         modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Frosted glass: a semi-transparent teal tint over the
+            // Frosted glass: a semi-transparent black tint over the
             // blurred screen underneath. The screen stays faintly
             // visible; the pad is unmistakably a surface.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(FlickBrand.TealBackground.copy(alpha = opacity))
+                    .background(FlickBrand.AmoledBackground.copy(alpha = opacity))
             )
             DrawPad(
                 modifier = Modifier.fillMaxSize(),
                 onGestureFinished = { raw: List<List<StrokePoint>> ->
                     scope.launch {
                         val gestures = dao.getAll()
-                        val templates = gestures.map { gesture ->
-                            Recognizer.MultiTemplate(
-                                gesture.name,
-                                Recognizer.strokesFromString(gesture.template)
-                            )
-                        }
+                        // Every recorded sample of every gesture: the
+                        // recognizer matches against all of them and
+                        // takes the best score.
+                        val templates = gestures.flatMap { it.multiTemplates() }
                         val match = Recognizer.recognizeMulti(raw, templates)
                         val gesture = match?.let { m ->
                             gestures.firstOrNull { it.name == m.template.name }
                         }
                         if (gesture == null) {
-                            message = "No matching gesture"
+                            message = "No match, try again"
                             if (autoCloseOnFail) {
                                 delay(1200)
                                 onClose()
@@ -224,6 +229,31 @@ private fun DrawScreen(
                     )
                 }
             }
+            // Brand header: the transparent logo and the wordmark,
+            // centred at the top of the pad, above the drawing area.
+            // Neither is clickable, so strokes pass straight through
+            // to the pad underneath. The close X (top-left) and the
+            // settings gear (top-right) keep their places at the sides.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.flick_logo_transparent),
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Image(
+                    painter = painterResource(R.drawable.flick_wordmark),
+                    contentDescription = "Flick",
+                    contentScale = ContentScale.FillHeight,
+                    modifier = Modifier.height(22.dp)
+                )
+            }
+
             // Top bar: close on the left, settings on the right. Both sit
             // in translucent chips so they read over any background.
             Row(

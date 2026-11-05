@@ -67,6 +67,42 @@ def luminosity_to_alpha(rgb: Image.Image, threshold: int = 95) -> Image.Image:
     return Image.fromarray(out, mode="RGBA")
 
 
+def transparent_logo(rgb: Image.Image) -> Image.Image:
+    """Logo 3 with no background at all: only the white swoosh and the
+    cyan dot remain, for use on the glass pad (v1.0.8).
+    1. luminosity_to_alpha(threshold=95): the teal gradient never exceeds
+       a max channel of ~95, so it becomes fully transparent; the white
+       swoosh and the cyan dot stay opaque.
+    2. Flood-fill border-connected opaque near-white pixels to
+       transparent: the squircle sits on a white background, so its
+       corners are still white after step 1. The swoosh is an island of
+       white enclosed by (now transparent) teal, so the flood fill
+       cannot reach it.
+    3. Crop to the remaining content with a small margin.
+    """
+    rgba = luminosity_to_alpha(rgb, threshold=95)
+    arr = np.asarray(rgba)
+    white = ((arr[..., 3] > 200) & (arr[..., :3].min(axis=2) > 235)).astype(np.uint8) * 255
+    mask = Image.fromarray(white, mode="L")
+    # Creating the Draw object makes the fromarray image writable:
+    # without it the image is readonly and floodfill silently no-ops.
+    ImageDraw.Draw(mask)
+    for seed in [(0, 0), (mask.width - 1, 0), (0, mask.height - 1),
+                 (mask.width - 1, mask.height - 1)]:
+        ImageDraw.floodfill(mask, seed, 128, thresh=5)
+    flood = np.asarray(mask)
+    new_alpha = np.where(flood == 128, 0, arr[..., 3]).astype(np.uint8)
+    out = rgba.copy()
+    out.putalpha(Image.fromarray(new_alpha, mode="L"))
+    bbox = out.getbbox()
+    if bbox is not None:
+        pad = 8
+        box = (max(0, bbox[0] - pad), max(0, bbox[1] - pad),
+               min(out.width, bbox[2] + pad), min(out.height, bbox[3] + pad))
+        out = out.crop(box)
+    return out
+
+
 def main() -> None:
     logo = Image.open(LOGO).convert("RGB")
     print("logo:", logo.size)
@@ -94,6 +130,14 @@ def main() -> None:
     fg = logo_rgba.resize((512, 512), Image.LANCZOS)
     fg.save(os.path.join(fg_dir, "ic_launcher_foreground.png"), optimize=True)
     print("drawable-xxxhdpi: ic_launcher_foreground.png 512px")
+
+    # Transparent logo for the glass pad (v1.0.8): swoosh + cyan dot only.
+    logo_t = transparent_logo(logo)
+    if logo_t.width > 512:
+        logo_t = logo_t.resize(
+            (512, int(512 * logo_t.height / logo_t.width)), Image.LANCZOS)
+    logo_t.save(os.path.join(fg_dir, "flick_logo_transparent.png"), optimize=True)
+    print("drawable-xxxhdpi: flick_logo_transparent.png", logo_t.size)
 
     wm = Image.open(WORDMARK).convert("RGB")
     print("wordmark:", wm.size)

@@ -33,8 +33,39 @@ data class Gesture(
     val template: String,
     val actionType: ActionType,
     /** Action payload: package name for LAUNCH_APP, URL for OPEN_URL, empty otherwise. */
-    val payload: String = ""
-)
+    val payload: String = "",
+    /**
+     * Extra recorded samples of the same gesture (v1.0.8): additional
+     * strokesToString strings, one per sample, joined by "\n". The
+     * recognizer matches against every sample and takes the best score,
+     * so a gesture drawn a little differently still matches. At most
+     * 3 samples in total (template + 2 extras). Empty for gestures
+     * recorded before multi-sample support.
+     */
+    val extraTemplates: String = ""
+) {
+    /** All recorded samples of this gesture, first sample first. */
+    fun allTemplates(): List<String> =
+        (listOf(template) + extraTemplates.split("\n").filter { it.isNotBlank() })
+            .take(MAX_SAMPLES)
+
+    /** Number of recorded samples (1 for gestures recorded before v1.0.8). */
+    fun sampleCount(): Int = allTemplates().size
+
+    /** Every sample as a recognizer template, all under this gesture's name. */
+    fun multiTemplates(): List<com.ibfavas.flick.gesture.Recognizer.MultiTemplate> =
+        allTemplates().map { sample ->
+            com.ibfavas.flick.gesture.Recognizer.MultiTemplate(
+                name,
+                com.ibfavas.flick.gesture.Recognizer.strokesFromString(sample)
+            )
+        }
+
+    companion object {
+        /** Maximum samples per gesture: the first plus two extras. */
+        const val MAX_SAMPLES = 3
+    }
+}
 
 /**
  * Gesture library backed by plain SQLite (SQLiteOpenHelper).
@@ -50,7 +81,7 @@ data class Gesture(
 class GestureDao(context: Context) {
 
     private val helper = object : SQLiteOpenHelper(
-        context.applicationContext, "flick.db", null, 1
+        context.applicationContext, "flick.db", null, 2
     ) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -59,12 +90,18 @@ class GestureDao(context: Context) {
                     "name TEXT NOT NULL, " +
                     "template TEXT NOT NULL, " +
                     "actionType TEXT NOT NULL, " +
-                    "payload TEXT NOT NULL DEFAULT '')"
+                    "payload TEXT NOT NULL DEFAULT '', " +
+                    "extraTemplates TEXT NOT NULL DEFAULT '')"
             )
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // v1 only; no migrations yet.
+            // v2 (v1.0.8): extra recorded samples per gesture.
+            if (oldVersion < 2) {
+                db.execSQL(
+                    "ALTER TABLE gestures ADD COLUMN extraTemplates TEXT NOT NULL DEFAULT ''"
+                )
+            }
         }
     }
 
@@ -127,6 +164,7 @@ class GestureDao(context: Context) {
     }
 
     private fun rowToGesture(cursor: android.database.Cursor): Gesture {
+        val extraIdx = cursor.getColumnIndex("extraTemplates")
         return Gesture(
             id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
             name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
@@ -134,7 +172,12 @@ class GestureDao(context: Context) {
             actionType = ActionType.valueOf(
                 cursor.getString(cursor.getColumnIndexOrThrow("actionType"))
             ),
-            payload = cursor.getString(cursor.getColumnIndexOrThrow("payload"))
+            payload = cursor.getString(cursor.getColumnIndexOrThrow("payload")),
+            extraTemplates = if (extraIdx >= 0 && !cursor.isNull(extraIdx)) {
+                cursor.getString(extraIdx)
+            } else {
+                ""
+            }
         )
     }
 
@@ -144,6 +187,7 @@ class GestureDao(context: Context) {
             put("template", template)
             put("actionType", actionType.name)
             put("payload", payload)
+            put("extraTemplates", extraTemplates)
         }
     }
 }

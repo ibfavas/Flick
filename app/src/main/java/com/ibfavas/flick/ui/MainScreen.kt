@@ -81,6 +81,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -137,7 +138,7 @@ private enum class GestureCategory(val label: String) {
 }
 
 /**
- * Flick v1.0.6: the new brand. Deep teal, white text, one bright cyan
+ * Flick v1.0.8: AMOLED. Pitch black, white text, one bright cyan
  * accent; the wordmark is the header. The home screen is the gesture
  * list plus a floating add button and a settings entry. No bottom
  * navigation. The draw pad is the centerpiece: a full-screen pad for
@@ -146,16 +147,33 @@ private enum class GestureCategory(val label: String) {
 @Composable
 fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean = false) {
     var screen by remember { mutableStateOf(if (openSettings) Screen.SETTINGS else Screen.LIST) }
-    BackHandler(enabled = screen != Screen.LIST) { screen = Screen.LIST }
+    // The gesture a sample is being recorded for. While set, the add-sample
+    // screen replaces the normal screen flow.
+    var addingSampleFor by remember { mutableStateOf<Gesture?>(null) }
+    BackHandler(enabled = addingSampleFor != null || screen != Screen.LIST) {
+        if (addingSampleFor != null) {
+            addingSampleFor = null
+        } else {
+            screen = Screen.LIST
+        }
+    }
     // Every screen sits inside a Surface: without one, Text without an
     // explicit colour falls back to LocalContentColor, which defaults to
-    // black — dark text on the dark teal background, which is how the
+    // black — dark text on the dark background, which is how the
     // record screen's labels became unreadable in v1.0.6. The Surface
     // provides the theme's onBackground (white) as the content colour.
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
+    if (addingSampleFor != null) {
+        AddSampleScreen(
+            dao = dao,
+            gesture = addingSampleFor!!,
+            onBack = { addingSampleFor = null },
+            onSaved = { addingSampleFor = null }
+        )
+    } else {
     AnimatedContent(
         targetState = screen,
         transitionSpec = {
@@ -171,7 +189,10 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                 dao = dao,
                 onRecord = { screen = Screen.RECORD },
                 onTest = { screen = Screen.TEST },
-                onSettings = { screen = Screen.SETTINGS }
+                onSettings = { screen = Screen.SETTINGS },
+                onAddSample = { gesture ->
+                    addingSampleFor = gesture
+                }
             )
             Screen.RECORD -> RecordScreen(
                 dao = dao,
@@ -191,6 +212,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
         }
     }
     }
+    }
 }
 
 // ---------------------------------------------------------------- list
@@ -201,7 +223,8 @@ private fun GestureListScreen(
     dao: GestureDao,
     onRecord: () -> Unit,
     onTest: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onAddSample: (Gesture) -> Unit
 ) {
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
@@ -217,7 +240,7 @@ private fun GestureListScreen(
             FloatingActionButton(
                 onClick = onRecord,
                 containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = FlickBrand.CyanDark,
+                contentColor = FlickBrand.OnCyan,
                 modifier = Modifier.pressScale()
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add gesture")
@@ -342,6 +365,15 @@ private fun GestureListScreen(
     editing?.let { gesture ->
         EditGestureDialog(
             gesture = gesture,
+            sampleCount = gesture.sampleCount(),
+            onAddSample = if (gesture.sampleCount() < Gesture.MAX_SAMPLES) {
+                {
+                    editing = null
+                    onAddSample(gesture)
+                }
+            } else {
+                null
+            },
             onDismiss = { editing = null },
             onSave = { name, type, payload ->
                 scope.launch {
@@ -374,7 +406,7 @@ private fun GestureListScreen(
 
 /**
  * A category pill for the home screen. Selected: cyan fill, dark text.
- * Unselected: teal surface, white text.
+ * Unselected: near-black surface, white text.
  */
 @Composable
 private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -392,7 +424,7 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) FlickBrand.CyanDark else FlickBrand.TextWhite
+            color = if (selected) FlickBrand.OnCyan else FlickBrand.TextWhite
         )
     }
 }
@@ -409,6 +441,7 @@ private fun GestureCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
+            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surface)
             .combinedClickable(onClick = onEdit, onLongClick = onDelete)
             .padding(12.dp),
@@ -447,7 +480,8 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(FlickBrand.TealSurfaceVariant)
+            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(14.dp))
+            .background(FlickBrand.AmoledSurfaceVariant)
     ) {
         Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
             if (strokes.isEmpty()) return@Canvas
@@ -490,7 +524,11 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
 private fun gestureDescription(gesture: Gesture): String {
     val base = ActionExecutor.describe(gesture)
     val strokes = Recognizer.strokesFromString(gesture.template).size
-    return if (strokes > 1) "$base, $strokes strokes" else base
+    val samples = gesture.sampleCount()
+    var text = base
+    if (strokes > 1) text += ", $strokes strokes"
+    if (samples > 1) text += ", $samples samples"
+    return text
 }
 
 // Only material-icons-core is in the build deps (see tools/seeds.txt), so
@@ -555,6 +593,8 @@ private fun FallbackIcon(icon: ImageVector) {
 @Composable
 private fun EditGestureDialog(
     gesture: Gesture,
+    sampleCount: Int,
+    onAddSample: (() -> Unit)?,
     onDismiss: () -> Unit,
     onSave: (String, ActionType, String) -> Unit
 ) {
@@ -573,6 +613,26 @@ private fun EditGestureDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 ActionPicker(action = action, onChange = { action = it })
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Samples: $sampleCount of ${Gesture.MAX_SAMPLES}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                Text(
+                    "More samples make recognition more accurate.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (onAddSample != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onAddSample,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Record another sample")
+                    }
+                }
             }
         },
         confirmButton = {
@@ -598,8 +658,15 @@ private fun RecordScreen(
 ) {
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
+    // Samples recorded for this gesture: the first is the template, the
+    // rest are extra samples (v1.0.8). The recognizer matches against
+    // every sample, so the same gesture drawn a little differently still
+    // matches. Up to Gesture.MAX_SAMPLES in total.
+    var samples by remember { mutableStateOf<List<List<List<StrokePoint>>>>(emptyList()) }
     var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
+    var padKey by remember { mutableStateOf(0) }
     var action by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
+    val totalSamples = samples.size + if (captured != null) 1 else 0
 
     LazyColumn(
         modifier = Modifier
@@ -644,23 +711,44 @@ private fun RecordScreen(
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                DrawPad(
-                    modifier = Modifier.fillMaxSize().padding(8.dp),
-                    onGestureFinished = { captured = it },
-                    onCleared = { captured = null }
-                )
+                // A fresh pad per sample: key() drops the old DrawPad
+                // state (its strokes, timer and hint) when a sample is kept.
+                key(padKey) {
+                    DrawPad(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        onGestureFinished = { captured = it },
+                        onCleared = { captured = null }
+                    )
+                }
             }
             Text(
-                if (captured == null) "Nothing drawn yet"
-                else {
-                    val strokes = captured!!.size
-                    val points = captured!!.sumOf { it.size }
-                    "Captured: $strokes stroke${if (strokes == 1) "" else "s"}, $points points"
+                when {
+                    captured == null && samples.isEmpty() -> "Nothing drawn yet"
+                    captured == null -> "$totalSamples sample${if (totalSamples == 1) "" else "s"} recorded"
+                    else -> {
+                        val strokes = captured!!.size
+                        val points = captured!!.sumOf { it.size }
+                        "Sample $totalSamples captured: $strokes stroke${if (strokes == 1) "" else "s"}, $points points"
+                    }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
+            // Extra samples make recognition more accurate: draw the same
+            // gesture again, a little differently if you like.
+            if (captured != null && samples.size < Gesture.MAX_SAMPLES - 1) {
+                OutlinedButton(
+                    onClick = {
+                        samples = samples + listOf(captured!!)
+                        captured = null
+                        padKey++
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Add another sample (${totalSamples + 1} of ${Gesture.MAX_SAMPLES})")
+                }
+            }
         }
         item {
             Text(
@@ -671,16 +759,19 @@ private fun RecordScreen(
             ActionPicker(action = action, onChange = { action = it })
         }
         item {
+            val allSamples = samples + listOfNotNull(captured)
             Button(
-                enabled = name.isNotBlank() && captured != null && action.isValid(),
+                enabled = name.isNotBlank() && allSamples.isNotEmpty() && action.isValid(),
                 onClick = {
                     scope.launch {
                         dao.insert(
                             Gesture(
                                 name = name.trim(),
-                                template = Recognizer.strokesToString(captured!!),
+                                template = Recognizer.strokesToString(allSamples[0]),
                                 actionType = action.type,
-                                payload = action.payload
+                                payload = action.payload,
+                                extraTemplates = allSamples.drop(1)
+                                    .joinToString("\n") { Recognizer.strokesToString(it) }
                             )
                         )
                         onSaved()
@@ -694,6 +785,107 @@ private fun RecordScreen(
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Save gesture", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- add sample
+
+/**
+ * Record one more sample of an existing gesture (v1.0.8). The new sample
+ * is appended to the gesture's extra samples; the recognizer matches
+ * against every sample and takes the best score.
+ */
+@Composable
+private fun AddSampleScreen(
+    dao: GestureDao,
+    gesture: Gesture,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
+    val current = gesture.sampleCount()
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    "Add a sample",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "\"${gesture.name}\" has $current sample${if (current == 1) "" else "s"} " +
+                    "of ${Gesture.MAX_SAMPLES}. Draw the same gesture again, " +
+                    "a little differently if you like.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        item {
+            Text(
+                "Draw the gesture in the box:",
+                color = FlickBrand.TextWhite
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(340.dp)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                DrawPad(
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    onGestureFinished = { captured = it },
+                    onCleared = { captured = null }
+                )
+            }
+            Text(
+                if (captured == null) "Nothing drawn yet" else "Sample captured",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        item {
+            Button(
+                enabled = captured != null,
+                onClick = {
+                    scope.launch {
+                        val extras = gesture.allTemplates().drop(1) +
+                            Recognizer.strokesToString(captured!!)
+                        dao.update(
+                            gesture.copy(extraTemplates = extras.joinToString("\n"))
+                        )
+                        onSaved()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .pressScale()
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save sample", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -966,23 +1158,20 @@ private fun TestPadScreen(
                 onGestureFinished = { raw ->
                     scope.launch {
                         val gestures = dao.getAll()
-                        val templates = gestures.map { gesture ->
-                            Recognizer.MultiTemplate(
-                                gesture.name,
-                                Recognizer.strokesFromString(gesture.template)
-                            )
-                        }
+                        // Every recorded sample of every gesture: the
+                        // recognizer matches against all of them and
+                        // takes the best score.
+                        val templates = gestures.flatMap { it.multiTemplates() }
                         val match = Recognizer.recognizeMulti(raw, templates)
                         val gesture = match?.let { m ->
                             gestures.firstOrNull { it.name == m.template.name }
                         }
                         matched = gesture
                         result = if (gesture == null) {
-                            "No match"
+                            "No match, try again"
                         } else {
-                            val score = match?.let { (it.score * 100).toInt() }
-                            "Matched: ${gesture.name} " +
-                                (if (score != null) "(score $score%) -> " else "-> ") +
+                            val score = match?.let { (it.score * 100).toInt() } ?: 0
+                            "Matched ${gesture.name}, $score%\n" +
                                 ActionExecutor.describe(gesture)
                         }
                     }
@@ -1024,7 +1213,7 @@ private fun TestPadScreen(
 /**
  * Settings, in Flick's own design but with the same depth of features
  * Glyf has: Permissions, Overlay, Triggers and Reliability. Every label
- * is white or light grey on the dark teal background, never dark text
+ * is white or light grey on the black background, never dark text
  * on a dark surface.
  */
 @Composable
@@ -1238,7 +1427,7 @@ private fun notificationsGranted(context: Context): Boolean {
 private fun overlayGranted(context: Context): Boolean =
     Settings.canDrawOverlays(context)
 
-/** One settings section: a title above a rounded teal card. */
+/** One settings section: a title above a rounded near-black card. */
 @Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Column {
@@ -1253,6 +1442,7 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, FlickBrand.Outline, RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)

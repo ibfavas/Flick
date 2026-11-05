@@ -19,3 +19,6 @@ local.properties
 
 # JVM recognizer test harness build outputs
 tools/recognizer-test/*.jar
+
+# Python bytecode from the brand-asset script
+tools/__pycache__/

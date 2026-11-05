@@ -35,7 +35,7 @@ class SettingsStore(private val context: Context) {
         const val DEFAULT_BLUR_PX: Int = 25
         const val MAX_BLUR_PX: Int = 100
 
-        /** Frosted teal tint over the blurred background, 0..1. */
+        /** Frosted black tint over the blurred background, 0..1. */
         const val DEFAULT_OPACITY: Float = 0.45f
 
         /**

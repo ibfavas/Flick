@@ -29,16 +29,21 @@ data class StrokePoint(val x: Float, val y: Float)
 object Recognizer {
 
     /**
-     * Accuracy tuning (v1.0.7, measured with tools/recognizer-test on
+     * Accuracy tuning (v1.0.8, measured with tools/recognizer-test on
      * 390 varied copies of 13 shapes plus 100 unknown shapes and random
-     * walks, all seeded):
+     * walks, all seeded). The harness runs two suites: SINGLE (one
+     * template per gesture, the v1.0.7 behaviour) and MULTI (three
+     * samples per gesture, the v1.0.8 behaviour). More templates mean
+     * more chances for an unknown shape to match something, so the
+     * constants below are tuned for the MULTI suite first:
      *
      * - Resample to 96 points (was 64): finer shape detail, so similar
      *   shapes are less likely to collide.
-     * - Default threshold 0.85 (was 0.70): correct matches score 0.92 and
-     *   up even when sloppy, rotated or rescaled, while scribbles and
-     *   unknown shapes mostly score 0.70-0.85. A low-confidence match
-     *   must show "no match", never launch the wrong app.
+     * - Default threshold 0.87 (was 0.85 in v1.0.7): correct matches
+     *   score 0.92 and up even when sloppy, rotated or rescaled, while
+     *   scribbles and unknown shapes mostly score 0.70-0.85. A
+     *   low-confidence match must show "no match", never launch the
+     *   wrong app.
      * - Stroke-count penalty: a candidate drawn with a different number
      *   of strokes than the template loses 0.12. A one-stroke circle
      *   must not match a two-stroke Q, and vice versa. Small enough
@@ -47,21 +52,37 @@ object Recognizer {
      * - Orientation penalty: the indicative-angle rotation makes a "+"
      *   and an "x" identical, so a plus matched an x template at 0.98.
      *   When both joined paths are open (not closed shapes like a
-     *   circle), the score loses up to 0.15 for a large difference in
-     *   indicative angle (none under 15 degrees of tilt, full at 45).
+     *   circle), the score loses up to 0.20 for a large difference in
+     *   indicative angle (none under 10 degrees of tilt, full at 40).
      *   Closed shapes skip it, because their start point is arbitrary.
+     *   v1.0.8 raised the cap from 0.15 to 0.20 and tightened the
+     *   free/full band from 15/45 to 10/40: with three samples per
+     *   gesture the plus-vs-x confusion was the main source of false
+     *   matches, and 0.20 is what pushes MULTI false matches from 8%
+     *   (at the v1.0.7 constants) to 3%. 0.25 was tried and kills real
+     *   matches (SINGLE correct fell to 83%).
+     *
+     * v1.0.8 measured results (seeded harness, 13 shapes):
+     * - SINGLE: 386/390 correct (98%, the 4 misses are no-matches,
+     *   never a wrong launch), 0/100 false matches (0%).
+     * - MULTI (3 samples): 390/390 correct (100%), 3/100 false
+     *   matches (3%).
+     * - v1.0.7 constants for comparison: SINGLE 390/390 (100%),
+     *   4/100 false (4%); MULTI 390/390 (100%), 8/100 false (8%).
+     * So v1.0.8 trades 4 single-sample no-matches for a false-match
+     * rate under the v1.0.7 4% on both suites.
      * - Minimum size: a gesture smaller than 30 px across or shorter
      *   than 60 px of path is an accidental touch, not a gesture.
      */
     const val RESAMPLE_COUNT = 96
-    const val DEFAULT_THRESHOLD = 0.85f
+    const val DEFAULT_THRESHOLD = 0.87f
     private const val SQUARE_SIZE = 250f
     private const val HALF_DIAGONAL = 0.5f * 353.55f // 0.5 * sqrt(250^2 + 250^2)
     private const val MAX_PERMUTED_STROKES = 4
     private const val STROKE_COUNT_PENALTY = 0.12f
-    private const val ORIENTATION_PENALTY_MAX = 0.15f
-    private const val ORIENTATION_FREE_DEGREES = 15f
-    private const val ORIENTATION_FULL_DEGREES = 45f
+    private const val ORIENTATION_PENALTY_MAX = 0.20f
+    private const val ORIENTATION_FREE_DEGREES = 10f
+    private const val ORIENTATION_FULL_DEGREES = 40f
     private const val MIN_GESTURE_SIZE_PX = 30f
     private const val MIN_GESTURE_LENGTH_PX = 60f
 
