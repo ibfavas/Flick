@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -122,9 +123,17 @@ class DrawActivity : ComponentActivity() {
                 DrawScreen(
                     dao = dao,
                     settings = settings,
+                    // Runs the action only (v1.0.12): DrawScreen closes
+                    // the pad itself with a smooth fade-out after this
+                    // returns, so the close is never cut short by a
+                    // finish here, and never skipped if this throws —
+                    // DrawScreen's finally handles the close.
                     onMatched = { gesture, feedback ->
-                        ActionExecutor.execute(this, gesture, feedback)
-                        finish()
+                        try {
+                            ActionExecutor.execute(this, gesture, feedback)
+                        } catch (e: Exception) {
+                            // Swallowed: the pad still closes smoothly.
+                        }
                     },
                     onClose = { finish() },
                     onOpenSettings = {
@@ -172,6 +181,21 @@ private fun DrawScreen(
     var drawn by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    // Smooth close (v1.0.12): the pad never snaps shut. Every close
+    // goes through closeSmoothly(), which starts the fade-out (and a
+    // slight scale-down) and only finishes the activity once the
+    // animation has played (~250 ms). The `closing` guard keeps a
+    // second close request from cutting the animation short.
+    var closing by remember { mutableStateOf(false) }
+    fun closeSmoothly() {
+        if (closing) return
+        closing = true
+        visible = false
+        scope.launch {
+            delay(250)
+            onClose()
+        }
+    }
 
     // The wave sweeps from the bottom of the pad (1) to the top (0)
     // while the "Opening" banner shows.
@@ -180,6 +204,19 @@ private fun DrawScreen(
         animationSpec = tween(650, easing = FastOutSlowInEasing),
         label = "openingWave"
     )
+
+    // Safety net (v1.0.12): once a gesture has matched, the pad must
+    // go away even if the launch path above is interrupted for any
+    // reason. The normal path finishes at ~650 ms + a 250 ms fade;
+    // this fires at 1500 ms only if the activity is somehow still
+    // alive. It closes smoothly too, and the `closing` guard makes
+    // it a no-op if a fade is already running.
+    LaunchedEffect(matched) {
+        if (matched != null) {
+            delay(1500)
+            closeSmoothly()
+        }
+    }
 
     // Blur the screen behind the window (Android 12 and up). The blur
     // radius comes from settings; 0 means no blur, just the tint.
@@ -200,7 +237,7 @@ private fun DrawScreen(
     LaunchedEffect(timeoutSeconds, drawn, matched) {
         if (timeoutSeconds > 0 && !drawn && matched == null) {
             delay(timeoutSeconds * 1000L)
-            onClose()
+            closeSmoothly()
         }
     }
 
@@ -208,7 +245,11 @@ private fun DrawScreen(
         visible = visible,
         enter = fadeIn(animationSpec = tween(200)) +
             scaleIn(initialScale = 0.98f, animationSpec = tween(200)),
-        exit = fadeOut(animationSpec = tween(150)),
+        // Smooth exit (v1.0.12): a 250 ms fade-out with a slight
+        // scale-down, instead of snapping shut. closeSmoothly() waits
+        // this out before finishing the activity.
+        exit = fadeOut(animationSpec = tween(250)) +
+            scaleOut(targetScale = 0.97f, animationSpec = tween(250)),
         modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -225,25 +266,39 @@ private fun DrawScreen(
                 onGestureFinished = { raw: List<List<StrokePoint>> ->
                     if (matched != null) return@DrawPad
                     scope.launch {
-                        // Disabled gestures never run: they are left
-                        // out of the match entirely (v1.0.10).
-                        val gestures = dao.getAll().filter { it.enabled }
-                        // Every recorded sample of every gesture: the
-                        // recognizer matches against all of them and
-                        // takes the best score.
-                        val templates = gestures.flatMap { it.multiTemplates() }
-                        val match = Recognizer.recognizeMulti(raw, templates)
-                        val gesture = match?.let { m ->
-                            gestures.firstOrNull { it.name == m.template.name }
-                        }
-                        if (gesture == null) {
-                            // No match: close at once. No message, no
-                            // prompt, no setting for it (v1.0.11).
-                            onClose()
-                        } else {
-                            matched = gesture
-                            delay(650)
-                            onMatched(gesture, Feedback(vibrateOnRun, soundOnRun))
+                        try {
+                            // Disabled gestures never run: they are left
+                            // out of the match entirely (v1.0.10).
+                            val gestures = dao.getAll().filter { it.enabled }
+                            // Every recorded sample of every gesture: the
+                            // recognizer matches against all of them and
+                            // takes the best score.
+                            val templates = gestures.flatMap { it.multiTemplates() }
+                            val match = Recognizer.recognizeMulti(raw, templates)
+                            val gesture = match?.let { m ->
+                                gestures.firstOrNull { it.name == m.template.name }
+                            }
+                            if (gesture == null) {
+                                // No match: close smoothly. No message,
+                                // no prompt, no setting for it (v1.0.11).
+                                closeSmoothly()
+                            } else {
+                                matched = gesture
+                                delay(650)
+                                try {
+                                    // Launch first, fade behind it: the
+                                    // app comes up while the pad
+                                    // dissolves underneath (v1.0.12).
+                                    onMatched(gesture, Feedback(vibrateOnRun, soundOnRun))
+                                } finally {
+                                    closeSmoothly()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Never strand the user on the pad: a failure
+                            // reading the gestures or recognising still
+                            // closes it, exactly like a miss.
+                            closeSmoothly()
                         }
                     }
                 },
@@ -307,9 +362,10 @@ private fun DrawScreen(
                     )
                 }
             }
-            // "Opening <name>" banner: the matched gesture's name with
+            // "Opening <name>" pill: the matched gesture's name with
             // its target's icon, at the top of the pad, in place of the
-            // brand header while the wave sweeps.
+            // brand header while the wave sweeps. Kept small and
+            // compact (v1.0.12) so it reads as a chip, not a banner.
             AnimatedVisibility(
                 visible = matched != null,
                 enter = fadeIn() + slideInVertically { -it / 2 },
@@ -324,17 +380,17 @@ private fun DrawScreen(
                         modifier = Modifier
                             .background(
                                 Color.Black.copy(alpha = 0.55f),
-                                RoundedCornerShape(24.dp)
+                                RoundedCornerShape(16.dp)
                             )
-                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ActionIcon(gesture, size = 36.dp, iconSize = 20.dp)
-                        Spacer(modifier = Modifier.width(10.dp))
+                        ActionIcon(gesture, size = 24.dp, iconSize = 14.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Opening ${gesture.name}",
                             color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -354,7 +410,7 @@ private fun DrawScreen(
                 PadChipButton(
                     icon = Icons.Filled.Close,
                     description = "Close",
-                    onClick = onClose
+                    onClick = { closeSmoothly() }
                 )
                 PadChipButton(
                     icon = Icons.Filled.Settings,

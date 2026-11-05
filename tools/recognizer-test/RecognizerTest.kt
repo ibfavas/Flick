@@ -84,12 +84,43 @@ private fun runSuite(label: String, templates: List<Recognizer.MultiTemplate>) {
     println("$label MEAN BEST SCORE: correct=${if (correctScoreN > 0) "%.3f".format(correctScoreSum / correctScoreN) else "n/a"} (n=$correctScoreN), wrong=${if (wrongScoreN > 0) "%.3f".format(wrongScoreSum / wrongScoreN) else "n/a"} (n=$wrongScoreN)")
 }
 
+/**
+ * Tilt suite (v1.0.12): the user's complaint is a gesture drawn
+ * slightly tilted. Each known shape is drawn rotated by exactly
+ * 10, 15, 20 and 25 degrees in both directions, cleanly (no scale or
+ * translation noise), and must still match its own template. A tilt
+ * that scores below the threshold is a no-match, never a wrong launch.
+ */
+private fun runTiltSuite(label: String, templates: List<Recognizer.MultiTemplate>) {
+    val angles = listOf(-25f, -20f, -15f, -10f, 10f, 15f, 20f, 25f)
+    val rnd = Random(777)
+    var correct = 0; var wrong = 0; var noMatch = 0; var total = 0
+    val perAngle = mutableMapOf<Float, Int>()
+    for (angle in angles) {
+        var ok = 0
+        for (name in KNOWN) {
+            val strokes = ShapeGen.shapePoints(name, rnd, 1f, angle, 0f, 0f, 64)
+            val match = Recognizer.recognizeMulti(strokes, templates)
+            total++
+            when {
+                match == null -> noMatch++
+                match.template.name == name -> { correct++; ok++ }
+                else -> wrong++
+            }
+        }
+        perAngle[angle] = ok
+    }
+    println("$label TILT: total=$total correct=$correct (${100 * correct / total}%) wrong=$wrong no-match=$noMatch")
+    println("$label tilt per-angle correct/13: " + angles.joinToString(" ") { "${it.toInt()}deg=${perAngle[it]}" })
+}
+
 fun main() {
     val cleanRnd = Random(42)
     val single = KNOWN.map { name ->
         Recognizer.MultiTemplate(name, ShapeGen.shapePoints(name, cleanRnd, 1f, 0f, 0f, 0f, 64))
     }
     runSuite("SINGLE", single)
+    runTiltSuite("SINGLE", single)
 
     // Three samples per gesture: the clean template plus two varied
     // copies, as a user recording extra samples would produce.
@@ -108,4 +139,5 @@ fun main() {
         samples.map { Recognizer.MultiTemplate(name, it) }
     }
     runSuite("MULTI", multi)
+    runTiltSuite("MULTI", multi)
 }

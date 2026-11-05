@@ -29,13 +29,15 @@ data class StrokePoint(val x: Float, val y: Float)
 object Recognizer {
 
     /**
-     * Accuracy tuning (v1.0.8, measured with tools/recognizer-test on
+     * Accuracy tuning (v1.0.12, measured with tools/recognizer-test on
      * 390 varied copies of 13 shapes plus 100 unknown shapes and random
-     * walks, all seeded). The harness runs two suites: SINGLE (one
-     * template per gesture, the v1.0.7 behaviour) and MULTI (three
-     * samples per gesture, the v1.0.8 behaviour). More templates mean
-     * more chances for an unknown shape to match something, so the
-     * constants below are tuned for the MULTI suite first:
+     * walks, plus 104 tilted copies, all seeded). The harness runs two
+     * suites: SINGLE (one template per gesture, the v1.0.7 behaviour)
+     * and MULTI (three samples per gesture, the v1.0.8 behaviour), plus
+     * a TILT suite (each shape rotated by 10, 15, 20 and 25 degrees
+     * each way). More templates mean more chances for an unknown shape
+     * to match something, so the constants below are tuned for the
+     * MULTI suite first:
      *
      * - Resample to 96 points (was 64): finer shape detail, so similar
      *   shapes are less likely to collide.
@@ -53,7 +55,7 @@ object Recognizer {
      *   and an "x" identical, so a plus matched an x template at 0.98.
      *   When both joined paths are open (not closed shapes like a
      *   circle), the score loses up to 0.20 for a large difference in
-     *   indicative angle (none under 10 degrees of tilt, full at 40).
+     *   indicative angle (none under 20 degrees of tilt, full at 40).
      *   Closed shapes skip it, because their start point is arbitrary.
      *   v1.0.8 raised the cap from 0.15 to 0.20 and tightened the
      *   free/full band from 15/45 to 10/40: with three samples per
@@ -61,6 +63,14 @@ object Recognizer {
      *   matches, and 0.20 is what pushes MULTI false matches from 8%
      *   (at the v1.0.7 constants) to 3%. 0.25 was tried and kills real
      *   matches (SINGLE correct fell to 83%).
+     *   v1.0.12 widened the free band from 10 to 20 degrees (full
+     *   stays 40, cap stays 0.20): a gesture drawn slightly tilted
+     *   must still match. A 9-combo sweep showed free 20 / full 40
+     *   is the pick — it fixes the two 25-degree tilt misses and
+     *   lifts SINGLE correct to 390/390, at the cost of one extra
+     *   false match (MULTI 3% to 4%, the plus-vs-x pair). Wider free
+     *   bands (25) and a lower cap (0.15) both push false matches
+     *   to 6-7%, so they were rejected.
      *
      * v1.0.8 measured results (seeded harness, 13 shapes):
      * - SINGLE: 386/390 correct (98%, the 4 misses are no-matches,
@@ -71,6 +81,13 @@ object Recognizer {
      *   4/100 false (4%); MULTI 390/390 (100%), 8/100 false (8%).
      * So v1.0.8 trades 4 single-sample no-matches for a false-match
      * rate under the v1.0.7 4% on both suites.
+     * v1.0.12 measured results (same harness, plus the TILT suite):
+     * - SINGLE: 390/390 correct (100%), 1/100 false (1%),
+     *   TILT 104/104 (100%).
+     * - MULTI (3 samples): 390/390 correct (100%), 4/100 false
+     *   (4%), TILT 104/104 (100%).
+     * A tilted gesture that still does not reach the threshold shows
+     * no match, never a wrong launch.
      * - Minimum size: a gesture smaller than 30 px across or shorter
      *   than 60 px of path is an accidental touch, not a gesture.
      */
@@ -81,7 +98,7 @@ object Recognizer {
     private const val MAX_PERMUTED_STROKES = 4
     private const val STROKE_COUNT_PENALTY = 0.12f
     private const val ORIENTATION_PENALTY_MAX = 0.20f
-    private const val ORIENTATION_FREE_DEGREES = 10f
+    private const val ORIENTATION_FREE_DEGREES = 20f
     private const val ORIENTATION_FULL_DEGREES = 40f
     private const val MIN_GESTURE_SIZE_PX = 30f
     private const val MIN_GESTURE_LENGTH_PX = 60f

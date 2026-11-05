@@ -19,15 +19,19 @@ run_combo() {
         "$SRC" > "$tmp"
     "$KOTLINC" "$tmp" RecognizerTest.kt ShapeGen.kt -include-runtime -d sweep.jar 2>/dev/null
     echo "=== $label (resample=$resample thr=$thr orientMax=$openmax free=$free full=$full) ==="
-    /home/hatch/jdk17/bin/java -jar sweep.jar 2>/dev/null | grep -E "VARIATIONS|FALSE MATCHES"
+    /home/hatch/jdk17/bin/java -jar sweep.jar 2>/dev/null | grep -E "VARIATIONS|FALSE MATCHES|TILT:"
     rm -f "$tmp" sweep.jar
 }
 
-run_combo "baseline"        96 0.85 0.15 15 45
-run_combo "thr-0.88"        96 0.88 0.15 15 45
-run_combo "thr-0.87-o20"    96 0.87 0.20 10 40
-run_combo "thr-0.88-o20"    96 0.88 0.20 10 40
-run_combo "thr-0.88-o25"    96 0.88 0.25 10 35
+run_combo "baseline-10-40-020" 96 0.87 0.20 10 40
+run_combo "free15-full40"     96 0.87 0.20 15 40
+run_combo "free15-full45"     96 0.87 0.20 15 45
+run_combo "free20-full40"     96 0.87 0.20 20 40
+run_combo "free20-full45"     96 0.87 0.20 20 45
+run_combo "free25-full45"     96 0.87 0.20 25 45
+run_combo "free25-full50"     96 0.87 0.20 25 50
+run_combo "free20-full45-m15" 96 0.87 0.15 20 45
+run_combo "free15-full45-m15" 96 0.87 0.15 15 45
 run_combo "r128-thr-0.88-o20" 128 0.88 0.20 10 40
 run_combo "thr-0.90"        96 0.90 0.15 15 45
 run_combo "thr-0.87-o18"    96 0.87 0.18 12 42
