@@ -9,11 +9,20 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.1-00E5FF" alt="Version 1.2.1">
+  <img src="https://img.shields.io/badge/version-1.2.2-00E5FF" alt="Version 1.2.2">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
 </p>
+
+## ⬇️ Download
+
+Get the latest release here:
+
+**[📥 flick-1.2.2.apk](https://github.com/ibfavas/Flick/releases/download/v1.2.2/flick-1.2.2.apk)**
+
+Or see all releases on the
+[releases page](https://github.com/ibfavas/Flick/releases).
 
 ## ✨ Features
 
@@ -27,8 +36,9 @@
 - **📚 Gesture library** — record gestures, give them names, attach
   actions, edit, delete, enable or disable, and test them from the draw
   pad. Up to 3 samples per gesture, with a confidence readout while
-  testing. Stored locally in a SQLite database on the phone. Backup and
-  restore your gestures as JSON.
+  testing; add extra samples straight from the gesture sheet. Stored
+  locally in a SQLite database on the phone. Backup and restore your
+  gestures as JSON.
 - **⚡ Actions** — launch an app, open a URL or deep link, call a
   contact, lock the screen, take a screenshot, toggle flashlight,
   open the camera, play/pause media, open Wi-Fi or Bluetooth settings,
@@ -43,7 +53,8 @@
   Cyan, Green, Amber, Purple, Pink, or Blue. Stroke colour and width are
   adjustable too.
 
-## 👻 How the invisible widget works
+<details>
+<summary><b>👻 How the invisible widget works</b></summary>
 
 Android widgets only support taps, not stroke tracking: a widget cannot
 receive finger-movement data. So the widget itself is just a transparent
@@ -52,7 +63,10 @@ the drawing happens there. In daily use it feels like drawing on the home
 screen, but the drawing technically happens in that transparent activity,
 not inside the widget.
 
-## 🛠️ Build
+</details>
+
+<details>
+<summary><b>🛠️ Build</b></summary>
 
 Requirements: JDK 17 and the Android SDK (platform-tools,
 `platforms;android-35`, `build-tools;35.0.0`).
@@ -76,6 +90,8 @@ properties (never commit them):
 A daemon-free manual build is also available via
 `tools/build-manual.sh` (kotlinc CLI + aapt2 + d8 + apksigner), which
 produces a signed release APK at `build/flick-release.apk`.
+
+</details>
 
 ## 🎨 Originality
 
