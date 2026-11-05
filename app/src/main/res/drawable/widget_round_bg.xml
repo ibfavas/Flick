@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round widget background: a pitch-black disc with a thin neutral
+     outline, matching the AMOLED theme. The Flick logo sits on top. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FF000000" />
+    <stroke android:width="1dp" android:color="#FF2E2E2E" />
+</shape>

@@ -2,4 +2,7 @@
 <resources>
     <string name="app_name">Flick</string>
     <string name="tile_label">Flick</string>
+    <string name="widget_round_label">Flick (Round)</string>
+    <string name="widget_wide_label">Flick (Wide)</string>
+    <string name="accessibility_service_description">Lets Flick lock the screen and take screenshots when you run those gesture actions. Flick does not read your screen or watch what you do.</string>
 </resources>

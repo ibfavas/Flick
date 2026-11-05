@@ -18,7 +18,25 @@ enum class ActionType {
     FLASHLIGHT_ON,
     FLASHLIGHT_OFF,
     OPEN_CAMERA,
-    MEDIA_PLAY_PAUSE
+    MEDIA_PLAY_PAUSE,
+    /** Call a phone contact. Payload: "Name\nNumber". */
+    CALL_CONTACT,
+    /** Lock the screen via the accessibility service. Payload unused. */
+    LOCK_SCREEN,
+    /** Take a screenshot via the accessibility service. Payload unused. */
+    TAKE_SCREENSHOT,
+    /** Open the system Wi-Fi panel (Android 12+ cannot flip Wi-Fi silently). */
+    TOGGLE_WIFI,
+    /** Open the system Bluetooth panel (same platform limit as Wi-Fi). */
+    TOGGLE_BLUETOOTH,
+    /** Flip Do Not Disturb, needs notification-policy access. */
+    TOGGLE_DND,
+    /**
+     * Run a flow: several actions in order. Payload is a JSON array of
+     * steps, encoded by FlowCodec, each step {"type": "...", "payload": "..."}.
+     * Steps are leaf actions only — a flow never contains another flow.
+     */
+    RUN_FLOW
 }
 
 /** One saved gesture: a name, a normalized template, and the action it runs. */

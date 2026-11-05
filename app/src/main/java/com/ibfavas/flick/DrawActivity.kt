@@ -49,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
+import com.ibfavas.flick.actions.Feedback
 import com.ibfavas.flick.data.DatabaseProvider
 import com.ibfavas.flick.data.Gesture
 import com.ibfavas.flick.data.GestureDao
@@ -98,8 +99,8 @@ class DrawActivity : ComponentActivity() {
                 DrawScreen(
                     dao = dao,
                     settings = settings,
-                    onMatched = { gesture ->
-                        ActionExecutor.execute(this, gesture)
+                    onMatched = { gesture, feedback ->
+                        ActionExecutor.execute(this, gesture, feedback)
                         finish()
                     },
                     onClose = { finish() },
@@ -120,7 +121,7 @@ class DrawActivity : ComponentActivity() {
 private fun DrawScreen(
     dao: GestureDao,
     settings: SettingsStore,
-    onMatched: (Gesture) -> Unit,
+    onMatched: (Gesture, Feedback) -> Unit,
     onClose: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -131,6 +132,12 @@ private fun DrawScreen(
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
     val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
         initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
+    )
+    val vibrateOnRun by settings.vibrateOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+    )
+    val soundOnRun by settings.soundOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_SOUND_ON_RUN
     )
     var message by remember { mutableStateOf<String?>(null) }
     var drawn by remember { mutableStateOf(false) }
@@ -196,7 +203,7 @@ private fun DrawScreen(
                                 onClose()
                             }
                         } else {
-                            onMatched(gesture)
+                            onMatched(gesture, Feedback(vibrateOnRun, soundOnRun))
                         }
                     }
                 },

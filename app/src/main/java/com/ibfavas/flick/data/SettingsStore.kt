@@ -30,6 +30,8 @@ class SettingsStore(private val context: Context) {
         private val OVERLAY_OPACITY = floatPreferencesKey("overlay_opacity")
         private val OVERLAY_TIMEOUT = intPreferencesKey("overlay_timeout_s")
         private val AUTO_CLOSE_ON_FAIL = booleanPreferencesKey("auto_close_on_fail")
+        private val VIBRATE_ON_RUN = booleanPreferencesKey("vibrate_on_run")
+        private val SOUND_ON_RUN = booleanPreferencesKey("sound_on_run")
 
         /** Background blur behind the pad, in px (Android 12 and up). */
         const val DEFAULT_BLUR_PX: Int = 25
@@ -48,12 +50,20 @@ class SettingsStore(private val context: Context) {
 
         /** Close the pad after a gesture that matched nothing. */
         const val DEFAULT_AUTO_CLOSE_ON_FAIL: Boolean = true
+
+        /** Short vibration when a gesture is recognised and runs. */
+        const val DEFAULT_VIBRATE_ON_RUN: Boolean = true
+
+        /** Short beep when a gesture is recognised and runs. */
+        const val DEFAULT_SOUND_ON_RUN: Boolean = false
     }
 
     val overlayBlur: Flow<Int> = context.dataStore.data.map { it[OVERLAY_BLUR] ?: DEFAULT_BLUR_PX }
     val overlayOpacity: Flow<Float> = context.dataStore.data.map { it[OVERLAY_OPACITY] ?: DEFAULT_OPACITY }
     val overlayTimeout: Flow<Int> = context.dataStore.data.map { it[OVERLAY_TIMEOUT] ?: DEFAULT_TIMEOUT_S }
     val autoCloseOnFail: Flow<Boolean> = context.dataStore.data.map { it[AUTO_CLOSE_ON_FAIL] ?: DEFAULT_AUTO_CLOSE_ON_FAIL }
+    val vibrateOnRun: Flow<Boolean> = context.dataStore.data.map { it[VIBRATE_ON_RUN] ?: DEFAULT_VIBRATE_ON_RUN }
+    val soundOnRun: Flow<Boolean> = context.dataStore.data.map { it[SOUND_ON_RUN] ?: DEFAULT_SOUND_ON_RUN }
 
     suspend fun setOverlayBlur(px: Int) {
         context.dataStore.edit { it[OVERLAY_BLUR] = px.coerceIn(0, MAX_BLUR_PX) }
@@ -69,5 +79,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setAutoCloseOnFail(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_CLOSE_ON_FAIL] = enabled }
+    }
+
+    suspend fun setVibrateOnRun(enabled: Boolean) {
+        context.dataStore.edit { it[VIBRATE_ON_RUN] = enabled }
+    }
+
+    suspend fun setSoundOnRun(enabled: Boolean) {
+        context.dataStore.edit { it[SOUND_ON_RUN] = enabled }
     }
 }

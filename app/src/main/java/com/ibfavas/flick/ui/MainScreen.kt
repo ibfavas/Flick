@@ -8,6 +8,7 @@ import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.provider.ContactsContract
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,10 +55,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -109,7 +117,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
+import com.ibfavas.flick.actions.Feedback
+import com.ibfavas.flick.actions.FlickAccessibilityService
+import com.ibfavas.flick.actions.FlowCodec
+import com.ibfavas.flick.actions.FlowStep
 import com.ibfavas.flick.data.ActionType
+import com.ibfavas.flick.data.Backup
 import com.ibfavas.flick.data.Gesture
 import com.ibfavas.flick.data.GestureDao
 import com.ibfavas.flick.data.SettingsStore
@@ -207,6 +220,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
             )
             Screen.SETTINGS -> SettingsScreen(
                 settings = settings,
+                dao = dao,
                 onBack = { screen = Screen.LIST }
             )
         }
@@ -533,7 +547,9 @@ private fun gestureDescription(gesture: Gesture): String {
 
 // Only material-icons-core is in the build deps (see tools/seeds.txt), so
 // only core icons are used here: Apps, Link, CameraAlt and the flashlight
-// icons live in material-icons-extended and would not compile.
+// icons live in material-icons-extended and would not compile. Wi-Fi and
+// Bluetooth have no core icon; both open a system panel, so the gear is
+// honest for them.
 private fun iconFor(type: ActionType): ImageVector = when (type) {
     ActionType.LAUNCH_APP -> Icons.AutoMirrored.Filled.ExitToApp
     ActionType.OPEN_URL -> Icons.Filled.Share
@@ -541,6 +557,13 @@ private fun iconFor(type: ActionType): ImageVector = when (type) {
     ActionType.FLASHLIGHT_OFF -> Icons.Filled.Close
     ActionType.OPEN_CAMERA -> Icons.Filled.Face
     ActionType.MEDIA_PLAY_PAUSE -> Icons.Filled.PlayArrow
+    ActionType.CALL_CONTACT -> Icons.Filled.Call
+    ActionType.LOCK_SCREEN -> Icons.Filled.Lock
+    ActionType.TAKE_SCREENSHOT -> Icons.Filled.Create
+    ActionType.TOGGLE_WIFI -> Icons.Filled.Settings
+    ActionType.TOGGLE_BLUETOOTH -> Icons.Filled.Settings
+    ActionType.TOGGLE_DND -> Icons.Filled.Notifications
+    ActionType.RUN_FLOW -> Icons.AutoMirrored.Filled.List
 }
 
 @Composable
@@ -897,15 +920,53 @@ private data class ActionSelection(val type: ActionType, val payload: String) {
     fun isValid(): Boolean = when (type) {
         ActionType.LAUNCH_APP -> payload.isNotBlank()
         ActionType.OPEN_URL -> payload.isNotBlank()
+        ActionType.CALL_CONTACT -> ActionExecutor.contactNumber(payload).isNotBlank()
+        ActionType.RUN_FLOW -> FlowCodec.decode(payload).size >= 2
         else -> true
     }
 }
 
 @Composable
-private fun ActionPicker(action: ActionSelection, onChange: (ActionSelection) -> Unit) {
+private fun ActionPicker(
+    action: ActionSelection,
+    onChange: (ActionSelection) -> Unit,
+    allowFlow: Boolean = true
+) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showAppPicker by remember { mutableStateOf(false) }
     var pickedAppLabel by remember { mutableStateOf<String?>(null) }
+    var pickedContactLabel by remember { mutableStateOf<String?>(null) }
+
+    // Contact picking needs two permissions: READ_CONTACTS to read the
+    // contact, CALL_PHONE to place the call. Both are requested together;
+    // picking still works if only the first is granted, and placing the
+    // call guides the user if the second is missing.
+    val contactPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickContact()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val contact = withContext(Dispatchers.IO) { readContact(context, uri) }
+                if (contact != null) {
+                    pickedContactLabel = contact.first
+                    onChange(
+                        ActionSelection(
+                            ActionType.CALL_CONTACT,
+                            "${contact.first}\n${contact.second}"
+                        )
+                    )
+                }
+            }
+        }
+    }
+    val contactPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants[Manifest.permission.READ_CONTACTS] == true) {
+            contactPicker.launch(null)
+        }
+    }
 
     Column {
         ActionOption(
@@ -954,6 +1015,111 @@ private fun ActionPicker(action: ActionSelection, onChange: (ActionSelection) ->
             selected = action.type == ActionType.MEDIA_PLAY_PAUSE,
             onClick = { onChange(ActionSelection(ActionType.MEDIA_PLAY_PAUSE, "")) }
         )
+        ActionOption(
+            label = "Call a contact",
+            selected = action.type == ActionType.CALL_CONTACT,
+            onClick = { onChange(ActionSelection(ActionType.CALL_CONTACT, action.payload)) }
+        )
+        if (action.type == ActionType.CALL_CONTACT) {
+            OutlinedButton(
+                onClick = {
+                    contactPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.READ_CONTACTS,
+                            Manifest.permission.CALL_PHONE
+                        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
+            ) {
+                Text(
+                    pickedContactLabel
+                        ?: ActionExecutor.contactName(action.payload)
+                            .takeIf { it.isNotBlank() }
+                        ?: "Choose contact"
+                )
+            }
+        }
+        ActionOption(
+            label = "Lock screen",
+            selected = action.type == ActionType.LOCK_SCREEN,
+            onClick = { onChange(ActionSelection(ActionType.LOCK_SCREEN, "")) }
+        )
+        if (action.type == ActionType.LOCK_SCREEN) {
+            Text(
+                "Needs Flick's accessibility service, turned on in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp)
+            )
+        }
+        ActionOption(
+            label = "Take a screenshot",
+            selected = action.type == ActionType.TAKE_SCREENSHOT,
+            onClick = { onChange(ActionSelection(ActionType.TAKE_SCREENSHOT, "")) }
+        )
+        if (action.type == ActionType.TAKE_SCREENSHOT) {
+            Text(
+                "Needs Flick's accessibility service, turned on in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp)
+            )
+        }
+        ActionOption(
+            label = "Open Wi-Fi settings",
+            selected = action.type == ActionType.TOGGLE_WIFI,
+            onClick = { onChange(ActionSelection(ActionType.TOGGLE_WIFI, "")) }
+        )
+        if (action.type == ActionType.TOGGLE_WIFI) {
+            Text(
+                "Android does not let an app flip Wi-Fi silently, so this opens the Wi-Fi panel for you to switch it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp)
+            )
+        }
+        ActionOption(
+            label = "Open Bluetooth settings",
+            selected = action.type == ActionType.TOGGLE_BLUETOOTH,
+            onClick = { onChange(ActionSelection(ActionType.TOGGLE_BLUETOOTH, "")) }
+        )
+        if (action.type == ActionType.TOGGLE_BLUETOOTH) {
+            Text(
+                "Same as Wi-Fi: Android does not let an app flip Bluetooth silently, so this opens the Bluetooth panel.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp)
+            )
+        }
+        ActionOption(
+            label = "Toggle Do Not Disturb",
+            selected = action.type == ActionType.TOGGLE_DND,
+            onClick = { onChange(ActionSelection(ActionType.TOGGLE_DND, "")) }
+        )
+        if (action.type == ActionType.TOGGLE_DND) {
+            Text(
+                "Needs notification-policy access, granted once in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp)
+            )
+        }
+        if (allowFlow) {
+            ActionOption(
+                label = "Run a flow",
+                selected = action.type == ActionType.RUN_FLOW,
+                onClick = { onChange(ActionSelection(ActionType.RUN_FLOW, action.payload)) }
+            )
+            if (action.type == ActionType.RUN_FLOW) {
+                FlowEditor(
+                    steps = FlowCodec.decode(action.payload),
+                    onChange = { steps ->
+                        onChange(ActionSelection(ActionType.RUN_FLOW, FlowCodec.encode(steps)))
+                    }
+                )
+            }
+        }
     }
 
     if (showAppPicker) {
@@ -967,6 +1133,163 @@ private fun ActionPicker(action: ActionSelection, onChange: (ActionSelection) ->
             }
         )
     }
+}
+
+/**
+ * Read a contact's display name and first phone number from the Uri
+ * returned by the system contact picker. Runs on a background thread.
+ */
+private fun readContact(context: Context, uri: Uri): Pair<String, String>? {
+    val resolver = context.contentResolver
+    var id: String? = null
+    var name: String? = null
+    resolver.query(
+        uri,
+        arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+        null, null, null
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            id = cursor.getString(0)
+            name = cursor.getString(1)
+        }
+    }
+    if (id == null) return null
+    var number: String? = null
+    resolver.query(
+        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+        arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+        "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+        arrayOf(id),
+        null
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) number = cursor.getString(0)
+    }
+    return if (number.isNullOrBlank()) null else Pair(name ?: number!!, number!!)
+}
+
+/**
+ * A flow editor: the steps in order, with move-up, move-down and remove
+ * controls, and an "Add step" button. A flow needs at least two steps.
+ */
+@Composable
+private fun FlowEditor(steps: List<FlowStep>, onChange: (List<FlowStep>) -> Unit) {
+    var showStepPicker by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.padding(start = 32.dp)) {
+        if (steps.isEmpty()) {
+            Text(
+                "A flow runs two or more actions in order. Add the first step.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        steps.forEachIndexed { index, step ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "${index + 1}. ${ActionExecutor.describeAction(step.type, step.payload)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    enabled = index > 0,
+                    onClick = {
+                        val reordered = steps.toMutableList()
+                        val moved = reordered.removeAt(index)
+                        reordered.add(index - 1, moved)
+                        onChange(reordered)
+                    }
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowUp,
+                        contentDescription = "Move up",
+                        tint = if (index > 0) FlickBrand.TextWhite
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(
+                    enabled = index < steps.size - 1,
+                    onClick = {
+                        val reordered = steps.toMutableList()
+                        val moved = reordered.removeAt(index)
+                        reordered.add(index + 1, moved)
+                        onChange(reordered)
+                    }
+                ) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "Move down",
+                        tint = if (index < steps.size - 1) FlickBrand.TextWhite
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = {
+                    onChange(steps.filterIndexed { i, _ -> i != index })
+                }) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Remove step",
+                        tint = FlickBrand.TextWhite
+                    )
+                }
+            }
+        }
+        if (steps.size < 2) {
+            Text(
+                "Add at least two steps to save this flow.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        OutlinedButton(
+            onClick = { showStepPicker = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Add step")
+        }
+    }
+    if (showStepPicker) {
+        FlowStepDialog(
+            onDismiss = { showStepPicker = false },
+            onAdd = { step ->
+                onChange(steps + step)
+                showStepPicker = false
+            }
+        )
+    }
+}
+
+/**
+ * Pick one leaf action to add to a flow. Flows never contain flows, so
+ * the "Run a flow" option is hidden here.
+ */
+@Composable
+private fun FlowStepDialog(onDismiss: () -> Unit, onAdd: (FlowStep) -> Unit) {
+    var step by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add a step") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                ActionPicker(
+                    action = step,
+                    onChange = { step = it },
+                    allowFlow = false
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = step.isValid(),
+                onClick = { onAdd(FlowStep(step.type, step.payload)) }
+            ) { Text("Add") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
@@ -1116,6 +1439,12 @@ private fun TestPadScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val vibrateOnRun by settings.vibrateOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+    )
+    val soundOnRun by settings.soundOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_SOUND_ON_RUN
+    )
     var result by remember { mutableStateOf<String?>(null) }
     var matched by remember { mutableStateOf<Gesture?>(null) }
 
@@ -1193,7 +1522,11 @@ private fun TestPadScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             enabled = matched != null,
-            onClick = { matched?.let { ActionExecutor.execute(context, it) } },
+            onClick = {
+                matched?.let {
+                    ActionExecutor.execute(context, it, Feedback(vibrateOnRun, soundOnRun))
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
@@ -1217,7 +1550,7 @@ private fun TestPadScreen(
  * on a dark surface.
  */
 @Composable
-private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
+private fun SettingsScreen(settings: SettingsStore, dao: GestureDao, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
@@ -1226,6 +1559,69 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
     val autoCloseOnFail by settings.autoCloseOnFail.collectAsState(
         initial = SettingsStore.DEFAULT_AUTO_CLOSE_ON_FAIL
     )
+    val vibrateOnRun by settings.vibrateOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+    )
+    val soundOnRun by settings.soundOnRun.collectAsState(
+        initial = SettingsStore.DEFAULT_SOUND_ON_RUN
+    )
+    // Backup result, shown under the buttons until the next backup action.
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    // Backup export: the user picks where the JSON file goes.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val json = Backup.export(dao.getAll())
+                    context.contentResolver.openOutputStream(uri)?.use {
+                        it.write(json.toByteArray(Charsets.UTF_8))
+                    }
+                    withContext(Dispatchers.Main) { backupMessage = "Backup saved" }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { backupMessage = "Could not save the backup" }
+                }
+            }
+        }
+    }
+    // Backup import: the user picks a Flick backup file. Duplicates are
+    // skipped by name, invalid entries are skipped, and a bad file shows
+    // an error instead of crashing.
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val text = context.contentResolver.openInputStream(uri)
+                        ?.bufferedReader()?.readText() ?: ""
+                    val existing = dao.getAll().map { it.name }.toSet()
+                    val (gestures, result) = Backup.parse(text, existing)
+                    if (result.error != null) {
+                        withContext(Dispatchers.Main) { backupMessage = result.error }
+                    } else {
+                        for (gesture in gestures) dao.insert(gesture)
+                        withContext(Dispatchers.Main) {
+                            backupMessage = buildString {
+                                append("Imported ${result.imported} gesture")
+                                if (result.imported != 1) append("s")
+                                if (result.skippedDuplicates > 0) {
+                                    append(", skipped ${result.skippedDuplicates} duplicate")
+                                    if (result.skippedDuplicates != 1) append("s")
+                                }
+                                if (result.skippedInvalid > 0) {
+                                    append(", skipped ${result.skippedInvalid} invalid")
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { backupMessage = "Could not read this file" }
+                }
+            }
+        }
+    }
     var cameraGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -1243,6 +1639,12 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
     val overlayLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { overlayGranted = overlayGranted(context) }
+    var accessibilityGranted by remember {
+        mutableStateOf(FlickAccessibilityService.isEnabled(context))
+    }
+    val accessibilityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { accessibilityGranted = FlickAccessibilityService.isEnabled(context) }
 
     LazyColumn(
         modifier = Modifier
@@ -1294,11 +1696,17 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
                 )
                 PermissionRow(
                     title = "Accessibility service (Optional)",
-                    description = "Optional. Flick's current actions don't need it.",
-                    granted = false,
-                    grantedText = "",
+                    description = if (accessibilityGranted) {
+                        "Enabled. Lock screen and screenshot actions will work."
+                    } else {
+                        "Needed for the lock screen and screenshot actions."
+                    },
+                    granted = accessibilityGranted,
+                    grantedText = "Enabled",
                     onAllow = {
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        accessibilityLauncher.launch(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        )
                     },
                     allowText = "Open"
                 )
@@ -1369,11 +1777,61 @@ private fun SettingsScreen(settings: SettingsStore, onBack: () -> Unit) {
             }
         }
         item {
+            SettingsSection(title = "Feedback") {
+                SettingSwitch(
+                    title = "Vibrate on run",
+                    description = "A short vibration when a gesture is recognised and runs.",
+                    checked = vibrateOnRun,
+                    onChange = { scope.launch { settings.setVibrateOnRun(it) } }
+                )
+                SettingSwitch(
+                    title = "Sound on run",
+                    description = "A short beep when a gesture is recognised and runs.",
+                    checked = soundOnRun,
+                    onChange = { scope.launch { settings.setSoundOnRun(it) } }
+                )
+            }
+        }
+        item {
+            SettingsSection(title = "Backup") {
+                Text(
+                    "Save all your gestures to a file, or bring them back from one. " +
+                        "Importing never duplicates a gesture you already have.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { exportLauncher.launch("flick-backup.json") },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Export")
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Import")
+                    }
+                }
+                backupMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = FlickBrand.TextWhite
+                    )
+                }
+            }
+        }
+        item {
             SettingsSection(title = "Triggers") {
                 Text(
-                    "Add the Flick widget to your home screen: it is fully transparent, " +
-                        "so it looks like empty space. Tap it to open the gesture pad. " +
-                        "You can also add the Flick tile from the Quick Settings panel.",
+                    "Add the Flick widget to your home screen: the invisible one is " +
+                        "fully transparent, so it looks like empty space. There are " +
+                        "also two visible widgets: a round one showing the Flick logo, " +
+                        "and a wide one showing the flick wordmark. Tap any of them " +
+                        "to open the gesture pad. You can also add the Flick tile " +
+                        "from the Quick Settings panel.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = FlickBrand.TextWhite
                 )
@@ -1496,6 +1954,34 @@ private fun PermissionRow(
                 Text(allowText)
             }
         }
+    }
+}
+
+/** A labelled switch row with a description underneath. */
+@Composable
+private fun SettingSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = FlickBrand.TextWhite
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
