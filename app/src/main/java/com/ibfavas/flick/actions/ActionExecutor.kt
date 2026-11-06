@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.media.RingtoneManager
 import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
@@ -57,7 +58,7 @@ object ActionExecutor {
 
     fun execute(context: Context, gesture: Gesture, feedback: Feedback = Feedback()) {
         if (feedback.vibrate) vibrate(context)
-        if (feedback.sound) playTone()
+        if (feedback.sound) playTone(context)
         when (gesture.actionType) {
             ActionType.LAUNCH_APP -> launchApp(context, gesture.payload)
             ActionType.OPEN_URL -> openUrl(context, gesture.payload)
@@ -333,7 +334,12 @@ object ActionExecutor {
 
     // ---------------------------------------------------------------- feedback
 
-    /** A short vibration when a gesture runs. Respects the system: no vibrator, no buzz. */
+    /**
+     * A short vibration when a gesture runs. Respects the system: no
+     * vibrator, no buzz. Explicit full amplitude and an 80 ms buzz:
+     * the old 50 ms at the default amplitude was too faint to feel
+     * on some phones (v1.5.0).
+     */
     private fun vibrate(context: Context) {
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -346,20 +352,35 @@ object ActionExecutor {
             }
             if (!vibrator.hasVibrator()) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(
-                    VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
-                )
+                vibrator.vibrate(VibrationEffect.createOneShot(80, 255))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(50)
+                vibrator.vibrate(80)
             }
         } catch (e: Exception) {
             // Vibration must never break running the action.
         }
     }
 
-    /** A short beep when a gesture runs, on the notification stream so it follows notification volume. */
-    private fun playTone() {
+    /**
+     * A short beep when a gesture runs. Plays the phone's notification
+     * sound, so it follows notification volume. The old ToneGenerator
+     * beep failed silently on some phones (v1.5.0): its constructor can
+     * throw when the audio service cannot allocate a tone generator,
+     * and the failure was swallowed. ToneGenerator is kept only as a
+     * fallback when no notification sound is set.
+     */
+    private fun playTone(context: Context) {
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val ringtone = RingtoneManager.getRingtone(context, uri)
+            if (ringtone != null) {
+                ringtone.play()
+                return
+            }
+        } catch (e: Exception) {
+            // Fall through to the ToneGenerator beep below.
+        }
         try {
             val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 60)
             tone.startTone(ToneGenerator.TONE_PROP_BEEP, 120)

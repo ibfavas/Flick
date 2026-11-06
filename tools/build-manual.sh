@@ -50,7 +50,7 @@ echo "== aapt2 link (also generates R.java) =="
 # aapt2 needs the package in the manifest itself (Gradle normally injects
 # the package, versionCode and versionName from the Gradle config).
 # Keep versionCode/versionName in sync with app/build.gradle.kts.
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="22"\n    android:versionName="1.4.2">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="23"\n    android:versionName="1.5.0">|' \
   app/src/main/AndroidManifest.xml > "$BUILD/AndroidManifest.xml"
 # BUG 1 (fixed in v1.0.4): aapt2 link --java generates ONLY the app's R.java.
 # Library resources are linked as bare compiled flats with no package

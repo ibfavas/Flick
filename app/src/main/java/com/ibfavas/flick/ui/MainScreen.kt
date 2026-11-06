@@ -1,6 +1,8 @@
 package com.ibfavas.flick.ui
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +41,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,9 +82,12 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -95,7 +103,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -140,6 +147,9 @@ import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
 import com.ibfavas.flick.actions.Feedback
 import com.ibfavas.flick.actions.FlickAccessibilityService
+import com.ibfavas.flick.widget.FlickRoundWidgetProvider
+import com.ibfavas.flick.widget.FlickWidgetProvider
+import com.ibfavas.flick.widget.FlickWideWidgetProvider
 import com.ibfavas.flick.actions.FlowCodec
 import com.ibfavas.flick.actions.FlowStep
 import com.ibfavas.flick.data.ActionType
@@ -369,6 +379,19 @@ private fun GestureListScreen(
     val filtered = remember(gestures, category) {
         gestures.filter { category.matches(it) }
     }
+    // Sort (v1.5.0): creation order by default, or name A to Z.
+    // The dao returns name order, so creation order sorts back to
+    // insertion order by id.
+    val sortOrder by settings.sortOrder.collectAsState(
+        initial = SettingsStore.DEFAULT_SORT_ORDER
+    )
+    val displayed = remember(filtered, sortOrder) {
+        if (sortOrder == SettingsStore.SORT_AZ) {
+            filtered.sortedBy { it.name.lowercase() }
+        } else {
+            filtered.sortedBy { it.id }
+        }
+    }
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
     )
@@ -432,9 +455,8 @@ private fun GestureListScreen(
                     )
                 }) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_mug_outline),
-                        contentDescription = "Buy me a coffee",
-                        tint = accentColor()
+                        painter = painterResource(R.drawable.ic_mug),
+                        contentDescription = "Buy me a coffee"
                     )
                 }
                 IconButton(onClick = onSettings) {
@@ -446,13 +468,59 @@ private fun GestureListScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "GESTURES (${gestures.size} saved)",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp,
-                color = FlickBrand.TextMuted
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "GESTURES (${gestures.size} saved)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                    color = FlickBrand.TextMuted
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                var sortMenuOpen by remember { mutableStateOf(false) }
+                Box {
+                    TextButton(onClick = { sortMenuOpen = true }) {
+                        Text(
+                            if (sortOrder == SettingsStore.SORT_AZ) "A-Z" else "Created",
+                            color = accentColor()
+                        )
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = accentColor()
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuOpen,
+                        onDismissRequest = { sortMenuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Creation order") },
+                            onClick = {
+                                scope.launch {
+                                    settings.setSortOrder(SettingsStore.SORT_CREATED)
+                                }
+                                sortMenuOpen = false
+                            },
+                            leadingIcon = if (sortOrder == SettingsStore.SORT_CREATED) {
+                                { Icon(Icons.Filled.Check, contentDescription = null) }
+                            } else null
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Name (A to Z)") },
+                            onClick = {
+                                scope.launch {
+                                    settings.setSortOrder(SettingsStore.SORT_AZ)
+                                }
+                                sortMenuOpen = false
+                            },
+                            leadingIcon = if (sortOrder == SettingsStore.SORT_AZ) {
+                                { Icon(Icons.Filled.Check, contentDescription = null) }
+                            } else null
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -537,10 +605,10 @@ private fun GestureListScreen(
                 }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    items(filtered, key = { it.id }) { gesture ->
+                    items(displayed, key = { it.id }) { gesture ->
                         AnimatedVisibility(
                             visible = true,
                             enter = fadeIn(animationSpec = tween(250)) +
@@ -2380,6 +2448,7 @@ private fun TestPadScreen(
  * is white or light grey on the black background, never dark text
  * on a dark surface.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsScreen(
     settings: SettingsStore,
@@ -2600,7 +2669,10 @@ private fun SettingsScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = FlickBrand.TextWhite
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     SettingsStore.STROKE_COLOR_PRESETS.forEach { argb ->
                         StrokeSwatch(
                             color = Color(argb),
@@ -2626,7 +2698,10 @@ private fun SettingsScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = FlickBrand.TextWhite
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     SettingsStore.ACCENT_COLOR_PRESETS.forEach { argb ->
                         StrokeSwatch(
                             color = Color(argb),
@@ -2674,6 +2749,30 @@ private fun SettingsScreen(
                     description = "A short beep when a gesture is recognised and runs.",
                     checked = soundOnRun,
                     onChange = { scope.launch { settings.setSoundOnRun(it) } }
+                )
+            }
+        }
+        item {
+            SettingsSection(title = "Widgets") {
+                Text(
+                    "Add a Flick widget to your home screen. Tap any widget to open the gesture pad.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FlickBrand.TextWhite
+                )
+                WidgetRow(
+                    title = "Flick (Round)",
+                    description = "1x1. The Flick logo on a black disc.",
+                    onAdd = { pinWidget(context, FlickRoundWidgetProvider::class.java) }
+                )
+                WidgetRow(
+                    title = "Flick (Invisible)",
+                    description = "2x1. Fully transparent, looks like empty space.",
+                    onAdd = { pinWidget(context, FlickWidgetProvider::class.java) }
+                )
+                WidgetRow(
+                    title = "Flick (Wide)",
+                    description = "3x1. The flick wordmark on black.",
+                    onAdd = { pinWidget(context, FlickWideWidgetProvider::class.java) }
                 )
             }
         }
@@ -2784,6 +2883,53 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
         ) {
             content()
         }
+    }
+}
+
+/** One widget row: name, description, and an Add button that asks the launcher to pin it. */
+@Composable
+private fun WidgetRow(title: String, description: String, onAdd: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = FlickBrand.TextWhite
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        OutlinedButton(onClick = onAdd) {
+            Text("Add")
+        }
+    }
+}
+
+/**
+ * Asks the launcher to pin the widget to the home screen (Android 8
+ * and up, which is the app's minimum). Returns false when the launcher
+ * refuses, in which case the user is told to use the widget picker.
+ */
+private fun pinWidget(context: Context, provider: Class<*>) {
+    val appWidgetManager =
+        context.getSystemService(Context.APPWIDGET_SERVICE) as AppWidgetManager
+    val pinned = try {
+        appWidgetManager.requestPinAppWidget(ComponentName(context, provider), null, null)
+    } catch (e: Exception) {
+        false
+    }
+    if (!pinned) {
+        Toast.makeText(
+            context,
+            "Could not add it here. Add it from the widget picker instead.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 }
 

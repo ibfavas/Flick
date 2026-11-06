@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -34,9 +35,10 @@ class SettingsStore(private val context: Context) {
         private val STROKE_WIDTH = floatPreferencesKey("stroke_width_px")
         private val STROKE_COLOR = intPreferencesKey("stroke_color_argb")
         private val ACCENT_COLOR = intPreferencesKey("accent_color_argb")
+        private val SORT_ORDER = stringPreferencesKey("sort_order")
 
         /** Background blur behind the pad, in px (Android 12 and up). */
-        const val DEFAULT_BLUR_PX: Int = 25
+        const val DEFAULT_BLUR_PX: Int = 60
         const val MAX_BLUR_PX: Int = 100
 
         /** Frosted black tint over the blurred background, 0..1. */
@@ -59,7 +61,7 @@ class SettingsStore(private val context: Context) {
         /** Drawn stroke thickness, in px. */
         const val DEFAULT_STROKE_WIDTH_PX: Float = 14f
         const val MIN_STROKE_WIDTH_PX: Float = 4f
-        const val MAX_STROKE_WIDTH_PX: Float = 24f
+        const val MAX_STROKE_WIDTH_PX: Float = 30f
 
         /** Drawn stroke colour, as an ARGB int. Cyan by default. */
         const val DEFAULT_STROKE_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
@@ -67,7 +69,8 @@ class SettingsStore(private val context: Context) {
         /** Stroke colour presets offered in Settings, as ARGB ints. */
         val STROKE_COLOR_PRESETS: List<Int> = listOf(
             0xFF00E5FF, 0xFFFFFFFF, 0xFFFFEB3B,
-            0xFF69F0AE, 0xFFFF80AB, 0xFFFFAB40
+            0xFF69F0AE, 0xFFFF80AB, 0xFFFFAB40,
+            0xFFC6FF00, 0xFFFF9100, 0xFFFF5252, 0xFF64FFDA
         ).map { it.toInt() }
 
         /**
@@ -86,8 +89,17 @@ class SettingsStore(private val context: Context) {
             0xFFFFAB40, // Amber
             0xFFB388FF, // Purple
             0xFFFF80AB, // Pink
-            0xFF448AFF  // Blue
+            0xFF448AFF, // Blue
+            0xFFC6FF00, // Lime
+            0xFFFF9100, // Orange
+            0xFFFF5252, // Red
+            0xFF64FFDA  // Teal
         ).map { it.toInt() }
+
+        /** Gesture list sort order: creation order or name A to Z. */
+        const val SORT_CREATED: String = "created"
+        const val SORT_AZ: String = "az"
+        const val DEFAULT_SORT_ORDER: String = SORT_CREATED
     }
 
     val overlayBlur: Flow<Int> = context.dataStore.data.map { it[OVERLAY_BLUR] ?: DEFAULT_BLUR_PX }
@@ -98,6 +110,7 @@ class SettingsStore(private val context: Context) {
     val strokeWidth: Flow<Float> = context.dataStore.data.map { it[STROKE_WIDTH] ?: DEFAULT_STROKE_WIDTH_PX }
     val strokeColor: Flow<Int> = context.dataStore.data.map { it[STROKE_COLOR] ?: DEFAULT_STROKE_COLOR_ARGB }
     val accentColor: Flow<Int> = context.dataStore.data.map { it[ACCENT_COLOR] ?: DEFAULT_ACCENT_COLOR_ARGB }
+    val sortOrder: Flow<String> = context.dataStore.data.map { it[SORT_ORDER] ?: DEFAULT_SORT_ORDER }
 
     suspend fun setOverlayBlur(px: Int) {
         context.dataStore.edit { it[OVERLAY_BLUR] = px.coerceIn(0, MAX_BLUR_PX) }
@@ -131,5 +144,11 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setAccentColor(argb: Int) {
         context.dataStore.edit { it[ACCENT_COLOR] = argb }
+    }
+
+    suspend fun setSortOrder(order: String) {
+        context.dataStore.edit {
+            it[SORT_ORDER] = if (order == SORT_AZ) SORT_AZ else SORT_CREATED
+        }
     }
 }

@@ -1,8 +1,12 @@
 package com.ibfavas.flick
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -40,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,6 +83,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.function.Consumer
 
 /**
  * Frosted-glass full-screen activity launched by the invisible widget and
@@ -169,6 +175,30 @@ private fun DrawScreen(
     val activity = LocalContext.current as? android.app.Activity
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
+    // Cross-window blur can be switched off by the system at runtime
+    // (battery saver, video playback, a developer override, or the
+    // device maker), and setBackgroundBlurRadius is then a silent
+    // no-op: the pad shows the sharp screen under only the tint, which
+    // is why the blur looked broken (v1.5.0). Track the real state and
+    // fall back to a stronger tint when blur is off, so the pad stays
+    // a readable surface instead of a barely tinted clear sheet.
+    val windowManager = activity?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+    var blurEnabled by remember {
+        mutableStateOf(windowManager?.isCrossWindowBlurEnabled ?: true)
+    }
+    DisposableEffect(windowManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && windowManager != null) {
+            val listener = Consumer<Boolean> { enabled ->
+                Handler(Looper.getMainLooper()).post { blurEnabled = enabled }
+            }
+            windowManager.addCrossWindowBlurEnabledListener(listener)
+            blurEnabled = windowManager.isCrossWindowBlurEnabled
+            onDispose { windowManager.removeCrossWindowBlurEnabledListener(listener) }
+        } else {
+            onDispose {}
+        }
+    }
+    val tintAlpha = if (blurEnabled) opacity else opacity.coerceAtLeast(0.65f)
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
@@ -281,11 +311,14 @@ private fun DrawScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             // Frosted glass: a semi-transparent black tint over the
             // blurred screen underneath. The screen stays faintly
-            // visible; the pad is unmistakably a surface.
+            // visible; the pad is unmistakably a surface. When the
+            // system has cross-window blur switched off, the tint is
+            // stronger (see tintAlpha above) because there is no blur
+            // to soften the screen behind.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(FlickBrand.AmoledBackground.copy(alpha = opacity))
+                    .background(FlickBrand.AmoledBackground.copy(alpha = tintAlpha))
             )
             DrawPad(
                 modifier = Modifier.fillMaxSize(),

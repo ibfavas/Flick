@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.2-00E5FF" alt="Version 1.4.2">
+  <img src="https://img.shields.io/badge/version-1.5.0-00E5FF" alt="Version 1.5.0">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
@@ -18,8 +18,8 @@
 ## ⬇️ Download
 
 <p align="center">
-  <a href="https://github.com/ibfavas/Flick/releases/download/v1.4.2/flick-1.4.2.apk">
-    <img src="assets/download-button.png" alt="Download flick-1.4.2.apk" width="320">
+  <a href="https://github.com/ibfavas/Flick/releases/download/v1.5.0/flick-1.5.0.apk">
+    <img src="assets/download-button.png" alt="Download flick-1.5.0.apk" width="320">
   </a>
 </p>
 
@@ -27,13 +27,18 @@
   📦 <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
 </p>
 
-## 🎉 What is new in 1.4.2
+## 🎉 What is new in 1.5.0
 
-🏠 The home screen has a fresh look. Tabs are outlined pills now, with
-the active one filled in cyan. Each gesture row shows its stroke in a
-cyan outlined box, the app icon in a circle, and the name with its
-sample count on one line. The mug and gear at the top are cyan outlines
-too. Same screens, same features, just a cleaner home.
+☕ The old white coffee mug is back at the top of the home screen.
+Gesture rows sit a little closer together now. Vibrate and sound when
+a gesture runs are fixed: a stronger buzz and the phone's notification
+sound, so they actually play. A new Widgets section in Settings shows
+all three widgets, with a button to add each one to the home screen.
+Stroke width now goes up to 30px. Four new colours for the stroke and
+the app: lime, orange, red and teal. The background blur on the drawing
+pad now handles phones where the system has blur switched off, falling
+back to a stronger tint so the pad stays readable. The gesture list can
+be sorted by creation order or by name, A to Z. Plus bug fixes.
 
 ## ✨ Features
 
