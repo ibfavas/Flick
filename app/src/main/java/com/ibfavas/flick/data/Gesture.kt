@@ -66,7 +66,13 @@ data class Gesture(
      * gestures stay in the list, dimmed, but never match or run.
      * Toggled from the gesture detail sheet.
      */
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    /**
+     * Manual list position (v1.4.0). The list shows gestures in
+     * sortOrder, not by name, so a long-press drag can move a
+     * gesture up or down. New gestures go at the end (max + 1).
+     */
+    val sortOrder: Int = 0
 ) {
     /** All recorded samples of this gesture, first sample first. */
     fun allTemplates(): List<String> =
@@ -123,7 +129,7 @@ data class Gesture(
 class GestureDao(context: Context) {
 
     private val helper = object : SQLiteOpenHelper(
-        context.applicationContext, "flick.db", null, 3
+        context.applicationContext, "flick.db", null, 4
     ) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
@@ -134,7 +140,8 @@ class GestureDao(context: Context) {
                     "actionType TEXT NOT NULL, " +
                     "payload TEXT NOT NULL DEFAULT '', " +
                     "extraTemplates TEXT NOT NULL DEFAULT '', " +
-                    "enabled INTEGER NOT NULL DEFAULT 1)"
+                    "enabled INTEGER NOT NULL DEFAULT 1, " +
+                    "sortOrder INTEGER NOT NULL DEFAULT 0)"
             )
         }
 
@@ -151,6 +158,26 @@ class GestureDao(context: Context) {
                     "ALTER TABLE gestures ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
                 )
             }
+            // v4 (v1.4.0): manual list order for long-press drag
+            // reordering. Existing gestures keep their current
+            // display order (name order), numbered 0..n-1.
+            if (oldVersion < 4) {
+                db.execSQL(
+                    "ALTER TABLE gestures ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0"
+                )
+                db.query(
+                    "gestures", arrayOf("id"), null, null, null, null, "name ASC"
+                ).use { cursor ->
+                    var i = 0
+                    while (cursor.moveToNext()) {
+                        db.execSQL(
+                            "UPDATE gestures SET sortOrder = $i WHERE id = " +
+                                cursor.getLong(0)
+                        )
+                        i++
+                    }
+                }
+            }
         }
     }
 
@@ -161,7 +188,7 @@ class GestureDao(context: Context) {
         refresh()
     }
 
-    /** Flow of all gestures, ordered by name, refreshed after every change. */
+    /** Flow of all gestures, in list order, refreshed after every change. */
     fun observeAll(): Flow<List<Gesture>> = _all
 
     suspend fun getAll(): List<Gesture> = withContext(Dispatchers.IO) {
@@ -178,9 +205,37 @@ class GestureDao(context: Context) {
     }
 
     suspend fun insert(gesture: Gesture): Long = withContext(Dispatchers.IO) {
-        val id = helper.writableDatabase.insert("gestures", null, gesture.toValues())
+        val db = helper.writableDatabase
+        // New gestures go at the end of the list.
+        val max = db.rawQuery("SELECT MAX(sortOrder) FROM gestures", null).use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getInt(0) else -1
+        }
+        val id = db.insert("gestures", null, gesture.copy(sortOrder = max + 1).toValues())
         refresh()
         id
+    }
+
+    /**
+     * Persist a new list order after a drag reorder (v1.4.0): every
+     * gesture in [ordered] gets sortOrder = its position, in one
+     * transaction, then the flow refreshes once.
+     */
+    suspend fun updateOrder(ordered: List<Gesture>) = withContext(Dispatchers.IO) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            ordered.forEachIndexed { index, gesture ->
+                val values = ContentValues().apply { put("sortOrder", index) }
+                db.update(
+                    "gestures", values, "id = ?",
+                    arrayOf(gesture.id.toString())
+                )
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        refresh()
     }
 
     suspend fun update(gesture: Gesture) = withContext(Dispatchers.IO) {
@@ -205,7 +260,7 @@ class GestureDao(context: Context) {
     }
 
     private fun readAll(db: SQLiteDatabase): List<Gesture> {
-        db.query("gestures", null, null, null, null, null, "name ASC").use { cursor ->
+        db.query("gestures", null, null, null, null, null, "sortOrder ASC, name ASC").use { cursor ->
             val out = ArrayList<Gesture>()
             while (cursor.moveToNext()) out.add(rowToGesture(cursor))
             return out
@@ -215,6 +270,7 @@ class GestureDao(context: Context) {
     private fun rowToGesture(cursor: android.database.Cursor): Gesture {
         val extraIdx = cursor.getColumnIndex("extraTemplates")
         val enabledIdx = cursor.getColumnIndex("enabled")
+        val orderIdx = cursor.getColumnIndex("sortOrder")
         return Gesture(
             id = cursor.getLong(cursor.getColumnIndexOrThrow("id")),
             name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
@@ -232,6 +288,11 @@ class GestureDao(context: Context) {
                 cursor.getInt(enabledIdx) != 0
             } else {
                 true
+            },
+            sortOrder = if (orderIdx >= 0 && !cursor.isNull(orderIdx)) {
+                cursor.getInt(orderIdx)
+            } else {
+                0
             }
         )
     }
@@ -244,6 +305,7 @@ class GestureDao(context: Context) {
             put("payload", payload)
             put("extraTemplates", extraTemplates)
             put("enabled", if (enabled) 1 else 0)
+            put("sortOrder", sortOrder)
         }
     }
 }
