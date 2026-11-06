@@ -10,6 +10,9 @@ import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.WindowManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.widget.Toast
@@ -105,6 +108,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -145,6 +149,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
+import java.util.function.Consumer
 import com.ibfavas.flick.actions.Feedback
 import com.ibfavas.flick.actions.FlickAccessibilityService
 import com.ibfavas.flick.widget.FlickRoundWidgetProvider
@@ -2459,6 +2464,33 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
+    // Live system cross-window blur state (v1.5.1): the phone can
+    // switch blur off at runtime, and then the blur slider does
+    // nothing no matter what it is set to. Show the real state
+    // under the slider so the user can see whether the phone
+    // supports blur at all.
+    val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+    var systemBlurOn by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                windowManager?.isCrossWindowBlurEnabled ?: true
+            } else {
+                false
+            }
+        )
+    }
+    DisposableEffect(windowManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && windowManager != null) {
+            val listener = Consumer<Boolean> { enabled ->
+                Handler(Looper.getMainLooper()).post { systemBlurOn = enabled }
+            }
+            windowManager.addCrossWindowBlurEnabledListener(listener)
+            systemBlurOn = windowManager.isCrossWindowBlurEnabled
+            onDispose { windowManager.removeCrossWindowBlurEnabledListener(listener) }
+        } else {
+            onDispose {}
+        }
+    }
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
@@ -2630,6 +2662,17 @@ private fun SettingsScreen(
                     description = "Frosted glass background blur when the drawing pad is active (Android 12 and up).",
                     onChange = { scope.launch { settings.setOverlayBlur(it.toInt()) } }
                 )
+                Text(
+                    text = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                        "System blur: not available on this Android version."
+                    } else if (systemBlurOn) {
+                        "System blur: on."
+                    } else {
+                        "System blur: off. This phone has blur switched off, so the pad uses a darker tint instead."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 SettingSlider(
                     label = "Overlay opacity",
                     valueText = "${(opacity * 100).toInt()}%",
@@ -2744,6 +2787,12 @@ private fun SettingsScreen(
                     checked = vibrateOnRun,
                     onChange = { scope.launch { settings.setVibrateOnRun(it) } }
                 )
+                OutlinedButton(
+                    onClick = { ActionExecutor.testVibrate(context) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Test vibration")
+                }
                 SettingSwitch(
                     title = "Sound on run",
                     description = "A short beep when a gesture is recognised and runs.",

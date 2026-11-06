@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -83,6 +84,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import java.util.function.Consumer
 
 /**
@@ -172,7 +175,7 @@ private fun DrawScreen(
     onOpenSettings: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val activity = LocalContext.current as? android.app.Activity
+    val activity = LocalContext.current as? ComponentActivity
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
     // Cross-window blur can be switched off by the system at runtime
@@ -276,15 +279,31 @@ private fun DrawScreen(
 
     // Blur the screen behind the window (Android 12 and up). The blur
     // radius comes from settings; 0 means no blur, just the tint.
-    LaunchedEffect(blurPx) {
+    // v1.5.1: the radius used to be applied only once, when the blur
+    // setting changed. A radius set before the window attaches, or
+    // dropped by the system while the pad is paused, was silently
+    // lost, so the pad showed a sharp screen under the tint. It is
+    // now re-applied whenever the setting changes, whenever the
+    // system blur state changes, and every time the pad comes back
+    // to the foreground.
+    fun applyBlur() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 activity?.window?.setBackgroundBlurRadius(blurPx)
             } catch (e: Exception) {
                 // Some devices do not support window blur; the tint alone
                 // still reads as frosted glass.
+                Log.w("Flick", "Setting background blur radius failed", e)
             }
         }
+    }
+    LaunchedEffect(blurPx, blurEnabled) { applyBlur() }
+    DisposableEffect(activity) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) applyBlur()
+        }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose { activity?.lifecycle?.removeObserver(observer) }
     }
 
     // Close on its own if no gesture is drawn within the timeout. Once

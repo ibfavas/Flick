@@ -19,6 +19,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Log
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -339,26 +340,62 @@ object ActionExecutor {
      * vibrator, no buzz. Explicit full amplitude and an 80 ms buzz:
      * the old 50 ms at the default amplitude was too faint to feel
      * on some phones (v1.5.0).
+     *
+     * v1.5.1: the old version swallowed every failure silently, so a
+     * phone that could not vibrate looked exactly like one that could.
+     * Failures are now logged (tag "Flick"), and if the VibratorManager
+     * path fails or reports no vibrator, the legacy vibrator service
+     * is tried before giving up. Vibration still never breaks the
+     * action launch.
      */
+    fun testVibrate(context: Context) {
+        vibrate(context)
+    }
+
     private fun vibrate(context: Context) {
         try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val manager =
-                    context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                manager.defaultVibrator
+            val managerVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    val manager =
+                        context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                    manager.defaultVibrator
+                } catch (e: Exception) {
+                    Log.w("Flick", "VibratorManager lookup failed, trying legacy vibrator", e)
+                    null
+                }
             } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                null
             }
-            if (!vibrator.hasVibrator()) return
+            val vibrator = managerVibrator?.takeIf { it.hasVibrator() }
+                ?: legacyVibrator(context)?.takeIf { it.hasVibrator() }
+                ?: run {
+                    Log.w("Flick", "No working vibrator on this device")
+                    return
+                }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.d(
+                    "Flick",
+                    "Vibrating: hasAmplitudeControl=${vibrator.hasAmplitudeControl()}"
+                )
                 vibrator.vibrate(VibrationEffect.createOneShot(80, 255))
             } else {
+                Log.d("Flick", "Vibrating with legacy 80 ms buzz")
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(80)
             }
         } catch (e: Exception) {
             // Vibration must never break running the action.
+            Log.w("Flick", "Vibration failed", e)
+        }
+    }
+
+    private fun legacyVibrator(context: Context): Vibrator? {
+        return try {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        } catch (e: Exception) {
+            Log.w("Flick", "Legacy vibrator lookup failed", e)
+            null
         }
     }
 
