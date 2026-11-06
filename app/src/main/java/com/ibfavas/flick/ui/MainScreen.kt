@@ -35,7 +35,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +53,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -100,6 +98,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -125,19 +124,11 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -377,42 +368,6 @@ private fun GestureListScreen(
     val filtered = remember(gestures, category) {
         gestures.filter { category.matches(it) }
     }
-    // Long-press drag reorder (v1.4.0). The list shows gestures in
-    // sortOrder; dragging moves a row inside the current tab and the
-    // new order is saved on drop. While dragging, dragOrder is the
-    // list on screen; when it is null the list is just filtered.
-    // The dragged row is not animated into its new slot: it teleports
-    // there and its translation compensates by the same gap, so it
-    // stays glued to the finger while the other rows glide.
-    val listState = rememberLazyListState()
-    val haptics = LocalHapticFeedback.current
-    var dragOrder by remember { mutableStateOf<List<Gesture>?>(null) }
-    var draggingId by remember { mutableStateOf<Long?>(null) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    val displayList = dragOrder ?: filtered
-
-    fun commitDrag() {
-        val reordered = dragOrder
-        val id = draggingId
-        draggingId = null
-        dragOffsetY = 0f
-        dragOrder = null
-        if (reordered == null || id == null) return
-        if (reordered.map { it.id } == filtered.map { it.id }) return
-        // Merge back into the full list: gestures from other tabs
-        // keep their places, this tab's gestures take the new order.
-        val iterator = reordered.iterator()
-        val merged = gestures.map { g ->
-            if (category.matches(g)) iterator.next() else g
-        }
-        scope.launch { dao.updateOrder(merged) }
-    }
-
-    fun cancelDrag() {
-        draggingId = null
-        dragOffsetY = 0f
-        dragOrder = null
-    }
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
     )
@@ -451,8 +406,8 @@ private fun GestureListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp)
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp)
         ) {
             // Home page (v1.0.13): wordmark header with a small
             // support mug and settings gear, count line, category tabs
@@ -484,7 +439,7 @@ private fun GestureListScreen(
                     Icon(Icons.Filled.Settings, contentDescription = "Settings")
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 "GESTURES (${gestures.size} saved)",
                 style = MaterialTheme.typography.titleSmall,
@@ -492,7 +447,7 @@ private fun GestureListScreen(
                 letterSpacing = 2.sp,
                 color = FlickBrand.TextWhite
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -505,7 +460,7 @@ private fun GestureListScreen(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             if (filtered.isEmpty()) {
                 // Per-tab empty state, like Glyf's "No actions yet":
                 // a centred icon, a line saying what is missing, and
@@ -576,83 +531,21 @@ private fun GestureListScreen(
                 }
             } else {
                 LazyColumn(
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 80.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    items(displayList, key = { it.id }) { gesture ->
-                        val isDragging = gesture.id == draggingId
+                    items(filtered, key = { it.id }) { gesture ->
                         AnimatedVisibility(
                             visible = true,
                             enter = fadeIn(animationSpec = tween(250)) +
                                 expandVertically(animationSpec = tween(250)),
-                            modifier = if (isDragging) Modifier else Modifier.animateItem()
+                            modifier = Modifier.animateItem()
                         ) {
-                            GestureRow(
+                            GestureCard(
                                 gesture = gesture,
                                 onClick = { detail = gesture },
-                                dragModifier = Modifier
-                                    .zIndex(if (isDragging) 1f else 0f)
-                                    .graphicsLayer {
-                                        translationY =
-                                            if (isDragging) dragOffsetY else 0f
-                                    }
-                                    .pointerInput(gesture.id, filtered, category) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                val info = listState.layoutInfo
-                                                    .visibleItemsInfo.firstOrNull {
-                                                        it.key == gesture.id
-                                                    } ?: return@detectDragGesturesAfterLongPress
-                                                haptics.performHapticFeedback(
-                                                    HapticFeedbackType.LongPress
-                                                )
-                                                draggingId = gesture.id
-                                                dragOffsetY = 0f
-                                                dragOrder = filtered
-                                            },
-                                            onDragEnd = { commitDrag() },
-                                            onDragCancel = { cancelDrag() },
-                                            onDrag = { _, dragAmount ->
-                                                if (draggingId != gesture.id) {
-                                                    return@detectDragGesturesAfterLongPress
-                                                }
-                                                val order = dragOrder
-                                                    ?: return@detectDragGesturesAfterLongPress
-                                                dragOffsetY += dragAmount.y
-                                                val info = listState.layoutInfo
-                                                    .visibleItemsInfo
-                                                val dragged = info.firstOrNull {
-                                                    it.key == gesture.id
-                                                } ?: return@detectDragGesturesAfterLongPress
-                                                val centre = dragged.offset.toFloat() +
-                                                    dragOffsetY + dragged.size / 2f
-                                                val target = info.firstOrNull { item ->
-                                                    centre >= item.offset.toFloat() &&
-                                                        centre < (item.offset + item.size)
-                                                            .toFloat()
-                                                } ?: return@detectDragGesturesAfterLongPress
-                                                val from = order.indexOfFirst {
-                                                    it.id == gesture.id
-                                                }
-                                                val to = order.indexOfFirst {
-                                                    it.id == target.key
-                                                }
-                                                if (from < 0 || to < 0 || from == to) {
-                                                    return@detectDragGesturesAfterLongPress
-                                                }
-                                                // Keep the row under the finger: the
-                                                // layout slot jumps by the gap between
-                                                // the two rows, so the translation
-                                                // shrinks by exactly that gap.
-                                                dragOffsetY -=
-                                                    (target.offset - dragged.offset).toFloat()
-                                                val moved = order.toMutableList()
-                                                moved.add(to, moved.removeAt(from))
-                                                dragOrder = moved
-                                            }
-                                        )
-                                    }
+                                onEdit = { editing = gesture },
+                                onDelete = { deleting = gesture }
                             )
                         }
                     }
@@ -749,17 +642,17 @@ private fun GestureListScreen(
 }
 
 /**
- * A category pill for the home screen (v1.4.0). Selected: cyan fill,
- * dark text. Unselected: transparent with a cyan outline and cyan
- * text, matching the compact-list mockup.
+ * A category pill for the home screen. Selected: cyan fill, dark text.
+ * Unselected: near-black surface, white text.
  */
 @Composable
 private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) accentColor() else Color.Transparent)
-            .border(1.dp, accentColor(), RoundedCornerShape(20.dp))
+            .background(
+                if (selected) accentColor() else MaterialTheme.colorScheme.surfaceVariant
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
@@ -768,63 +661,82 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) FlickBrand.OnCyan else accentColor()
+            color = if (selected) FlickBrand.OnCyan else FlickBrand.TextWhite
         )
     }
 }
 
-/**
- * One compact gesture row (v1.4.0): a small cyan-outlined box with
- * the gesture stroke, the target's icon, then the name in bold with
- * "• N samples" after it on the same line, never wrapped — a long
- * name truncates with an ellipsis instead. Tap opens the detail
- * sheet; long-press drag (handled by the caller through
- * [dragModifier]) reorders the list, so there is no visible drag
- * handle and no long-press delete. Disabled gestures are dimmed so
- * their state is obvious at a glance.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GestureRow(
+private fun GestureCard(
     gesture: Gesture,
     onClick: () -> Unit,
-    dragModifier: Modifier = Modifier
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
+    val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
+        appLabel(gesture.payload)
+    } else {
+        null
+    }
+    val description = remember(gesture, appLabel) {
+        gestureDescription(gesture, appLabel)
+    }
     Row(
-        modifier = dragModifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .combinedClickable(onClick = onClick)
+            // Tap opens the detail sheet; long-press still deletes,
+            // as before. Disabled gestures are dimmed so their state
+            // is obvious at a glance.
+            .combinedClickable(onClick = onClick, onLongClick = onDelete)
             .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         GestureGlyph(
             template = gesture.template,
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(72.dp)
         )
-        Spacer(modifier = Modifier.width(10.dp))
-        ActionIcon(gesture, size = 28.dp, iconSize = 16.dp)
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = buildAnnotatedString {
-                withStyle(
-                    SpanStyle(
-                        fontWeight = FontWeight.SemiBold,
-                        color = FlickBrand.TextWhite
-                    )
-                ) { append(gesture.name) }
-                withStyle(
-                    SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ) { append("  •  ${gesture.sampleCount()} samples") }
-            },
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                gesture.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = FlickBrand.TextWhite
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        DragHandle()
+    }
+}
+
+/** The six-dot grip on the right edge of a gesture card, like Glyf's. */
+@Composable
+private fun DragHandle() {
+    Canvas(modifier = Modifier.size(16.dp, 28.dp)) {
+        val radius = 2.dp.toPx()
+        val color = Color(0xFF8A8A8A)
+        val xs = listOf(size.width * 0.3f, size.width * 0.7f)
+        val ys = listOf(size.height * 0.2f, size.height * 0.5f, size.height * 0.8f)
+        for (x in xs) {
+            for (y in ys) {
+                drawCircle(color, radius, Offset(x, y))
+            }
+        }
     }
 }
 
@@ -994,7 +906,7 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .border(1.5.dp, accent, RoundedCornerShape(14.dp))
+            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(14.dp))
             .background(FlickBrand.AmoledSurfaceVariant)
     ) {
         Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
