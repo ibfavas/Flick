@@ -63,10 +63,12 @@ fun iconFor(type: ActionType): ImageVector = when (type) {
 /**
  * The target's icon for a gesture: the app's own icon for app gestures,
  * the action's icon otherwise. Shared by the gesture cards, the detail
- * sheet and the overlay pad's "Opening" banner.
+ * sheet and the overlay pad's "Opening" banner. [circular] clips the
+ * app icon to a circle (v1.4.2 home cards); the default rounded
+ * rectangle is kept everywhere else.
  */
 @Composable
-fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
+fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp, circular: Boolean = false) {
     val context = LocalContext.current
     if (gesture.actionType == ActionType.LAUNCH_APP) {
         var bitmap by remember(gesture.payload) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
@@ -84,7 +86,7 @@ fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
                 contentDescription = null,
                 modifier = Modifier
                     .size(size)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(if (circular) CircleShape else RoundedCornerShape(10.dp))
             )
         } else {
             FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp, size, iconSize)

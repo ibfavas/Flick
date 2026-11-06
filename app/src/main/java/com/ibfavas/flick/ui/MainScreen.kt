@@ -76,7 +76,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -98,7 +97,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -127,6 +125,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -431,12 +432,17 @@ private fun GestureListScreen(
                     )
                 }) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_mug),
-                        contentDescription = "Buy me a coffee"
+                        painter = painterResource(R.drawable.ic_mug_outline),
+                        contentDescription = "Buy me a coffee",
+                        tint = accentColor()
                     )
                 }
                 IconButton(onClick = onSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    Icon(
+                        painter = painterResource(R.drawable.ic_gear_outline),
+                        contentDescription = "Settings",
+                        tint = accentColor()
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -445,7 +451,7 @@ private fun GestureListScreen(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp,
-                color = FlickBrand.TextWhite
+                color = FlickBrand.TextMuted
             )
             Spacer(modifier = Modifier.height(10.dp))
             Row(
@@ -531,7 +537,7 @@ private fun GestureListScreen(
                 }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
                     items(filtered, key = { it.id }) { gesture ->
@@ -642,16 +648,20 @@ private fun GestureListScreen(
 }
 
 /**
- * A category pill for the home screen. Selected: cyan fill, dark text.
- * Unselected: near-black surface, white text.
+ * A category pill for the home screen (v1.4.2): selected is a cyan
+ * fill with dark text; unselected is transparent with a cyan outline
+ * and cyan text, like the picked design.
  */
 @Composable
 private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(
-                if (selected) accentColor() else MaterialTheme.colorScheme.surfaceVariant
+            .background(if (selected) accentColor() else Color.Transparent)
+            .border(
+                width = if (selected) 0.dp else 1.dp,
+                color = accentColor(),
+                shape = RoundedCornerShape(20.dp)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 10.dp),
@@ -661,11 +671,20 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) FlickBrand.OnCyan else FlickBrand.TextWhite
+            color = if (selected) FlickBrand.OnCyan else accentColor()
         )
     }
 }
 
+/**
+ * A gesture card (v1.4.2, the picked design): a dark rounded card the
+ * same height as the 1.3.0 card (72dp glyph + 12dp padding), holding
+ * the cyan-outlined gesture thumbnail, the target's icon in a circle,
+ * and the name with "· N samples" on the same line (wrapping to a
+ * second line when the name is long). Tap opens the detail sheet;
+ * long-press still deletes, as before. Disabled gestures are dimmed
+ * so their state is obvious at a glance.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GestureCard(
@@ -674,23 +693,14 @@ private fun GestureCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val appLabel = if (gesture.actionType == ActionType.LAUNCH_APP) {
-        appLabel(gesture.payload)
-    } else {
-        null
-    }
-    val description = remember(gesture, appLabel) {
-        gestureDescription(gesture, appLabel)
-    }
+    val sampleText =
+        "${gesture.sampleCount()} sample${if (gesture.sampleCount() == 1) "" else "s"}"
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .border(1.dp, FlickBrand.Outline, RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surface)
-            // Tap opens the detail sheet; long-press still deletes,
-            // as before. Disabled gestures are dimmed so their state
-            // is obvious at a glance.
             .combinedClickable(onClick = onClick, onLongClick = onDelete)
             .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
             .padding(12.dp),
@@ -701,42 +711,30 @@ private fun GestureCard(
             modifier = Modifier.size(72.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                gesture.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = FlickBrand.TextWhite
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        DragHandle()
-    }
-}
-
-/** The six-dot grip on the right edge of a gesture card, like Glyf's. */
-@Composable
-private fun DragHandle() {
-    Canvas(modifier = Modifier.size(16.dp, 28.dp)) {
-        val radius = 2.dp.toPx()
-        val color = Color(0xFF8A8A8A)
-        val xs = listOf(size.width * 0.3f, size.width * 0.7f)
-        val ys = listOf(size.height * 0.2f, size.height * 0.5f, size.height * 0.8f)
-        for (x in xs) {
-            for (y in ys) {
-                drawCircle(color, radius, Offset(x, y))
-            }
-        }
+        ActionIcon(gesture, size = 44.dp, iconSize = 24.dp, circular = true)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = buildAnnotatedString {
+                withStyle(
+                    SpanStyle(
+                        color = FlickBrand.TextWhite,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                ) {
+                    append(gesture.name)
+                }
+                withStyle(
+                    SpanStyle(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Normal
+                    )
+                ) {
+                    append(" · $sampleText")
+                }
+            },
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -905,9 +903,8 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     val accent = accentColor()
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(14.dp))
-            .background(FlickBrand.AmoledSurfaceVariant)
+            .clip(RoundedCornerShape(8.dp))
+            .border(2.dp, accent, RoundedCornerShape(8.dp))
     ) {
         Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
             if (strokes.isEmpty()) return@Canvas

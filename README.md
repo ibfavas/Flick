@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-00E5FF" alt="Version 1.3.0">
+  <img src="https://img.shields.io/badge/version-1.4.2-00E5FF" alt="Version 1.4.2">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
@@ -18,8 +18,8 @@
 ## ⬇️ Download
 
 <p align="center">
-  <a href="https://github.com/ibfavas/Flick/releases/download/v1.3.0/flick-1.3.0.apk">
-    <img src="assets/download-button.png" alt="Download flick-1.3.0.apk" width="320">
+  <a href="https://github.com/ibfavas/Flick/releases/download/v1.4.2/flick-1.4.2.apk">
+    <img src="assets/download-button.png" alt="Download flick-1.4.2.apk" width="320">
   </a>
 </p>
 
@@ -27,10 +27,13 @@
   📦 <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
 </p>
 
-## 🎉 What is new in 1.3.0
+## 🎉 What is new in 1.4.2
 
-🎯 Recognition got better. On the built in test harness, live style draws
-went from 87% to 89% detected, and wrong launches did not go up. 👍
+🏠 The home screen has a fresh look. Tabs are outlined pills now, with
+the active one filled in cyan. Each gesture row shows its stroke in a
+cyan outlined box, the app icon in a circle, and the name with its
+sample count on one line. The mug and gear at the top are cyan outlines
+too. Same screens, same features, just a cleaner home.
 
 ## ✨ Features
 

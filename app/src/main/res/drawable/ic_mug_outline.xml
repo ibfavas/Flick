@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coffee mug icon, outline style (v1.4.2): the same Material
+     "local_cafe" mug shape as ic_mug.xml, redrawn as strokes so it
+     matches the outlined home top bar icons. Filled black strokes so
+     the Icon tint recolours them, like the gear. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M4,3h12v10c0,2.21 -1.79,4 -4,4H8c-2.21,0 -4,-1.79 -4,-4z"/>
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M16,6.5h1.5a2.5,2.5 0 0 1 0,5H16"/>
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M4,19.5h16"/>
+</vector>
