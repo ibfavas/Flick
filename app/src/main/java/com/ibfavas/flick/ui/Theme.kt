@@ -5,6 +5,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import com.ibfavas.flick.R
 
 /**
  * Flick's brand, AMOLED edition (v1.0.8): pitch black everywhere, white
@@ -51,6 +54,14 @@ object FlickBrand {
 
 /** The current app accent colour, provided by [FlickTheme]. */
 val LocalAccent = compositionLocalOf { FlickBrand.Cyan }
+
+/**
+ * The sketchbook home font (v1.4.0): Caveat, a handwritten face, used
+ * for the home screen heading, gesture names, tab labels and the Add
+ * button. The rest of the app keeps the default font; only the home
+ * screen is sketched.
+ */
+val SketchbookFont = FontFamily(Font(R.font.caveat))
 
 /** Read the current app accent colour inside a composable. */
 @Composable
