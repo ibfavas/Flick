@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.2-00E5FF" alt="Version 1.4.2">
+  <img src="https://img.shields.io/badge/version-1.3.0-00E5FF" alt="Version 1.3.0">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
@@ -18,8 +18,8 @@
 ## ⬇️ Download
 
 <p align="center">
-  <a href="https://github.com/ibfavas/Flick/releases/download/v1.4.2/flick-1.4.2.apk">
-    <img src="assets/download-button.png" alt="Download flick-1.4.2.apk" width="320">
+  <a href="https://github.com/ibfavas/Flick/releases/download/v1.3.0/flick-1.3.0.apk">
+    <img src="assets/download-button.png" alt="Download flick-1.3.0.apk" width="320">
   </a>
 </p>
 
@@ -27,10 +27,10 @@
   📦 <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
 </p>
 
-## 🎉 What is new in 1.4.2
+## 🎉 What is new in 1.3.0
 
-🏠 The home screen is back to the clean design. The sketchbook look from
-1.4.0 and 1.4.1 is gone, everything else works exactly as before. 👍
+🎯 Recognition got better. On the built in test harness, live style draws
+went from 87% to 89% detected, and wrong launches did not go up. 👍
 
 ## ✨ Features
 
