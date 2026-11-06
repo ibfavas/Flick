@@ -1,0 +1,1 @@
+A fix release for vibrate and blur. Vibration failures are now logged with a fallback, and Settings has a Test vibration button. The pad blur is re-applied when the pad opens, and Settings shows whether the phone itself has blur on or off. Also: old white mug icon back, 12dp spacing, stroke width up to 30px, four new colours, Widgets section in Settings, A-Z sorting.

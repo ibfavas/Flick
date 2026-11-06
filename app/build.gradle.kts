@@ -36,7 +36,12 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // Only sign when the keystore details are supplied (signed
+            // release builds). Without them, e.g. on F-Droid's build
+            // server, the release builds unsigned and F-Droid signs it.
+            if (project.findProperty("flickStoreFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

@@ -1,0 +1,11 @@
+Flick is a fully local Android gesture launcher. Draw a gesture to launch apps, open links, or run phone actions. No backend, no accounts, no data leaves your phone.
+
+Draw on the invisible home screen widget or the Quick Settings tile to open the transparent drawing pad, then draw your gesture and the matched action runs.
+
+Features:
+- Gesture pad with a matcher written from scratch: a multi-stroke recognizer blended with banded DTW. Sloppy, tilted and reversed strokes still match, and near misses do not launch the wrong thing. No ML model, no network.
+- Gesture library: record gestures, name them, attach actions, edit, delete, enable or disable, and test them. Up to 3 samples per gesture. Everything is stored locally in a SQLite database. Backup and restore as JSON.
+- Actions: launch an app, open a URL, call a contact, lock the screen, take a screenshot, toggle the flashlight, open the camera, play or pause media, open Wi-Fi or Bluetooth settings, toggle Do Not Disturb.
+- Flows: chain several actions into one gesture.
+- Invisible widget: a fully transparent home screen widget in round and wide styles, plus a Quick Settings tile.
+- Themes: AMOLED black with a choice of accent colour, adjustable stroke colour and width.
