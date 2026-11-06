@@ -56,12 +56,21 @@ object FlickBrand {
 val LocalAccent = compositionLocalOf { FlickBrand.Cyan }
 
 /**
- * The sketchbook home font (v1.4.0): Caveat, a handwritten face, used
- * for the home screen heading, gesture names, tab labels and the Add
- * button. The rest of the app keeps the default font; only the home
- * screen is sketched.
+ * The sketchbook home font (v1.4.1): Patrick Hand, a rough casual
+ * print handwriting, used for the home screen heading, gesture names,
+ * tab labels, subtitles and the Add button. v1.4.0 used Caveat, which
+ * is too neat and cursive for the concept image's rough print
+ * lettering; Patrick Hand matches it. The rest of the app keeps the
+ * default font; only the home screen is sketched.
  */
-val SketchbookFont = FontFamily(Font(R.font.caveat))
+val SketchbookFont = FontFamily(Font(R.font.patrick_hand))
+
+/**
+ * The sketchbook wordmark font (v1.4.1): Gochi Hand, the roughest
+ * of the handwriting faces, used only for the "flick" wordmark in the
+ * home top bar, matching the concept image's sketchy hand-lettering.
+ */
+val SketchWordmarkFont = FontFamily(Font(R.font.gochi_hand))
 
 /** Read the current app accent colour inside a composable. */
 @Composable

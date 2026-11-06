@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -76,13 +77,11 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -124,10 +123,14 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -156,6 +159,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 private enum class Screen { LIST, DRAW, RECORD, TEST, SETTINGS }
@@ -355,11 +359,13 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
 // ---------------------------------------------------------------- list
 
 /**
- * A hand-drawn wobbly frame (v1.4.0 sketchbook home). Points along
- * the rounded-rect perimeter are offset by a deterministic
- * pseudo-random amount (seeded, so the wobble never shifts between
- * recompositions), and a second fainter pass is drawn slightly
- * offset, like a pen going over the line twice.
+ * A hand-drawn wobbly frame (v1.4.1 sketchbook home, rougher than
+ * v1.4.0). The frame is 4 edge strokes that overshoot the corners
+ * plus 4 corner arcs, each drawn separately with a big deterministic
+ * wobble, so the lines cross past each other at the corners like a
+ * pen sketching a box. A second, stronger pass is drawn slightly
+ * offset, like the pen going over the line twice. The seed makes the
+ * wobble stable between recompositions.
  */
 private fun Modifier.sketchyBorder(
     color: Color,
@@ -371,81 +377,64 @@ private fun Modifier.sketchyBorder(
     val r = cornerRadius.toPx()
         .coerceAtMost(minOf(size.width, size.height) / 2f - sw)
         .coerceAtLeast(0f)
-    val random = Random(seed)
-    val jitter = 2.5.dp.toPx()
-    val step = 16.dp.toPx()
-    fun j(v: Float) = v + (random.nextFloat() * 2f - 1f) * jitter
-
-    val path = Path()
-    // Top edge, left to right.
-    var x = r
-    path.moveTo(j(x), j(sw / 2f))
-    while (x < size.width - r) {
-        x += step
-        path.lineTo(min(x, size.width - r), j(sw / 2f))
-    }
-    // Top-right corner, sampled as a quarter arc.
-    val arcSteps = 5
-    for (i in 1..arcSteps) {
-        val a = -Math.PI / 2 + (Math.PI / 2) * i / arcSteps
-        path.lineTo(
-            (size.width - r + r * cos(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter,
-            (r + r * sin(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
-        )
-    }
-    // Right edge, top to bottom.
-    var y = r
-    while (y < size.height - r) {
-        y += step
-        path.lineTo(j(size.width - sw / 2f), min(y, size.height - r))
-    }
-    // Bottom-right corner.
-    for (i in 1..arcSteps) {
-        val a = (Math.PI / 2) * i / arcSteps
-        path.lineTo(
-            (size.width - r + r * cos(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter,
-            (size.height - r + r * sin(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
-        )
-    }
-    // Bottom edge, right to left.
-    x = size.width - r
-    while (x > r) {
-        x -= step
-        path.lineTo(max(x, r), j(size.height - sw / 2f))
-    }
-    // Bottom-left corner.
-    for (i in 1..arcSteps) {
-        val a = Math.PI / 2 + (Math.PI / 2) * i / arcSteps
-        path.lineTo(
-            (r + r * cos(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter,
-            (size.height - r + r * sin(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
-        )
-    }
-    // Left edge, bottom to top.
-    y = size.height - r
-    while (y > r) {
-        y -= step
-        path.lineTo(j(sw / 2f), max(y, r))
-    }
-    // Top-left corner.
-    for (i in 1..arcSteps) {
-        val a = Math.PI + (Math.PI / 2) * i / arcSteps
-        path.lineTo(
-            (r + r * cos(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter,
-            (r + r * sin(a)).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
-        )
-    }
-    path.close()
+    val jitter = 4.5.dp.toPx()
+    val step = 10.dp.toPx()
+    val overshoot = 4.dp.toPx()
     val style = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    drawPath(path, color, style = style)
-    // Second pass, slightly offset and fainter: the pen going over
+
+    fun edge(from: Offset, to: Offset, random: Random): Path {
+        val dx = to.x - from.x
+        val dy = to.y - from.y
+        val len = sqrt(dx * dx + dy * dy)
+        val steps = max(1, (len / step).toInt())
+        val path = Path()
+        path.moveTo(from.x, from.y)
+        for (i in 1..steps) {
+            val t = i.toFloat() / steps
+            path.lineTo(
+                from.x + dx * t + (random.nextFloat() * 2f - 1f) * jitter,
+                from.y + dy * t + (random.nextFloat() * 2f - 1f) * jitter
+            )
+        }
+        return path
+    }
+
+    fun corner(cx: Float, cy: Float, startAngle: Double, random: Random): Path {
+        val path = Path()
+        val arcSteps = 5
+        for (i in 0..arcSteps) {
+            val a = startAngle + (Math.PI / 2) * i / arcSteps
+            val px = cx + r * cos(a).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
+            val py = cy + r * sin(a).toFloat() + (random.nextFloat() * 2f - 1f) * jitter
+            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        return path
+    }
+
+    fun frame(offset: Offset, random: Random): List<Path> {
+        val w = size.width
+        val h = size.height
+        val paths = mutableListOf<Path>()
+        paths += edge(Offset(r - overshoot, sw / 2f) + offset, Offset(w - r + overshoot, sw / 2f) + offset, random)
+        paths += edge(Offset(w - sw / 2f, r - overshoot) + offset, Offset(w - sw / 2f, h - r + overshoot) + offset, random)
+        paths += edge(Offset(w - r + overshoot, h - sw / 2f) + offset, Offset(r - overshoot, h - sw / 2f) + offset, random)
+        paths += edge(Offset(sw / 2f, h - r + overshoot) + offset, Offset(sw / 2f, r - overshoot) + offset, random)
+        val c1 = corner(w - r, r, -Math.PI / 2, random); c1.translate(offset); paths += c1
+        val c2 = corner(w - r, h - r, 0.0, random); c2.translate(offset); paths += c2
+        val c3 = corner(r, h - r, Math.PI / 2, random); c3.translate(offset); paths += c3
+        val c4 = corner(r, r, Math.PI, random); c4.translate(offset); paths += c4
+        return paths
+    }
+
+    val random = Random(seed)
+    for (p in frame(Offset.Zero, random)) drawPath(p, color, style = style)
+    // Second pass, offset and clearly visible: the pen going over
     // the line twice, which is what makes it read as hand-drawn.
-    path.translate(Offset(1.5.dp.toPx(), -1.dp.toPx()))
-    drawPath(
-        path,
-        color.copy(alpha = 0.35f),
-        style = Stroke(width = sw * 0.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
+    val random2 = Random(seed + 101L)
+    val faint = Stroke(width = sw * 0.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    for (p in frame(Offset(2.dp.toPx(), -1.5.dp.toPx()), random2)) {
+        drawPath(p, color.copy(alpha = 0.5f), style = faint)
+    }
 }
 
 /** A short wobbly horizontal line, used as a hand-drawn underline. */
@@ -475,6 +464,121 @@ private fun SketchLine(
             path,
             color,
             style = Stroke(width = strokeWidth.toPx(), cap = StrokeCap.Round)
+        )
+    }
+}
+
+/**
+ * The home top bar wordmark (v1.4.1): "flick" set in the rough
+ * sketch font, with the "i" drawn by hand so its dot can be the
+ * accent colour, as the brand has it. "fl" and "ck" are measured
+ * text; the "i" is a wobbly stem plus an accent dot, sized from the
+ * font's own "i" glyph box.
+ */
+@Composable
+private fun SketchWordmark(modifier: Modifier = Modifier) {
+    val accent = accentColor()
+    val textMeasurer = rememberTextMeasurer()
+    val style = TextStyle(fontFamily = SketchWordmarkFont, fontSize = 42.sp, color = Color.White)
+    val fl = textMeasurer.measure(AnnotatedString("fl"), style = style)
+    val iLayout = textMeasurer.measure(AnnotatedString("i"), style = style)
+    val ck = textMeasurer.measure(AnnotatedString("ck"), style = style)
+    val density = LocalDensity.current
+    val totalWidth = with(density) {
+        (fl.size.width + iLayout.size.width + ck.size.width).toDp()
+    }
+    val totalHeight = with(density) { fl.size.height.toDp() }
+    Canvas(modifier = modifier.width(totalWidth).height(totalHeight)) {
+        drawText(fl, topLeft = Offset.Zero)
+        val iBox = iLayout.getBoundingBox(0)
+        val iLeft = fl.size.width.toFloat()
+        val cx = iLeft + iBox.center.x
+        // The dot: the top of the "i" glyph box, in the accent colour.
+        val dotY = iBox.top + iBox.height * 0.10f
+        val dotR = min(iBox.width * 0.6f, iBox.height * 0.10f).coerceAtLeast(2.dp.toPx())
+        drawCircle(accent, radius = dotR, center = Offset(cx, dotY))
+        // The stem: a slightly wobbly vertical line below the dot.
+        val stemTop = iBox.top + iBox.height * 0.34f
+        val stemBottom = iBox.bottom - iBox.height * 0.02f
+        val stemPath = Path().apply {
+            moveTo(cx, stemTop)
+            lineTo(cx + 1.dp.toPx(), (stemTop + stemBottom) / 2f)
+            lineTo(cx - 0.5.dp.toPx(), stemBottom)
+        }
+        drawPath(
+            stemPath,
+            Color.White,
+            style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
+        )
+        drawText(ck, topLeft = Offset(iLeft + iLayout.size.width, 0f))
+    }
+}
+
+/**
+ * The home Add button (v1.4.1): a hand-drawn double circle with a
+ * plus inside and the label in the sketch font, in the accent colour,
+ * like the concept image. No pill background, just the sketch.
+ */
+@Composable
+private fun SketchAddButton(label: String, onClick: () -> Unit) {
+    val accent = accentColor()
+    Row(
+        modifier = Modifier
+            .pressScale()
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Canvas(modifier = Modifier.size(52.dp)) {
+            val radius = size.minDimension / 2f - 3.dp.toPx()
+            val center = Offset(size.width / 2f, size.height / 2f)
+            fun circlePath(offset: Offset, random: Random): Path {
+                val path = Path()
+                val steps = 28
+                for (i in 0..steps) {
+                    val a = 2 * Math.PI * i / steps
+                    val rr = radius + (random.nextFloat() * 2f - 1f) * 2.dp.toPx()
+                    val px = center.x + offset.x + rr * cos(a).toFloat()
+                    val py = center.y + offset.y + rr * sin(a).toFloat()
+                    if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                }
+                path.close()
+                return path
+            }
+            val circleStyle = Stroke(
+                width = 2.5.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
+            drawPath(circlePath(Offset.Zero, Random(42L)), accent, style = circleStyle)
+            drawPath(
+                circlePath(Offset(1.5.dp.toPx(), -1.dp.toPx()), Random(43L)),
+                accent.copy(alpha = 0.4f),
+                style = circleStyle
+            )
+            val arm = 10.dp.toPx()
+            drawLine(
+                accent,
+                Offset(center.x - arm, center.y),
+                Offset(center.x + arm, center.y),
+                strokeWidth = 3.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                accent,
+                Offset(center.x, center.y - arm),
+                Offset(center.x, center.y + arm),
+                strokeWidth = 3.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            label,
+            fontFamily = SketchbookFont,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = accent
         )
     }
 }
@@ -512,26 +616,15 @@ private fun GestureListScreen(
         // system insets on top, or the content would sit too low.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { onAdd(category) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = FlickBrand.OnCyan,
-                modifier = Modifier.pressScale()
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    when (category) {
-                        GestureCategory.APPS -> "Add App"
-                        GestureCategory.ACTIONS -> "Add Action"
-                        GestureCategory.WEBPAGES -> "Add Webpage"
-                        GestureCategory.FLOWS -> "Add Flow"
-                    },
-                    fontFamily = SketchbookFont,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            SketchAddButton(
+                label = when (category) {
+                    GestureCategory.APPS -> "Add App"
+                    GestureCategory.ACTIONS -> "Add Action"
+                    GestureCategory.WEBPAGES -> "Add Webpage"
+                    GestureCategory.FLOWS -> "Add Flow"
+                },
+                onClick = { onAdd(category) }
+            )
         }
     ) { padding ->
         Column(
@@ -547,13 +640,30 @@ private fun GestureListScreen(
             // the discoverable way into Settings; the overlay pad's gear
             // and the detail sheet's Settings entry still work too.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painter = painterResource(R.drawable.flick_wordmark),
-                    contentDescription = "Flick",
-                    contentScale = ContentScale.FillHeight,
-                    modifier = Modifier.height(34.dp)
-                )
-                Spacer(modifier = Modifier.weight(1f))
+                // Sketchbook home (v1.4.1): the wordmark is set in the
+                // rough sketch font with a hand-drawn "i", and the mug
+                // and gear are sketch-style icons, like the concept
+                // image. Small doodles sit between the wordmark and
+                // the icons.
+                SketchWordmark()
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_doodle_star),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Image(
+                        painter = painterResource(R.drawable.ic_doodle_cluster),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp, 14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 IconButton(onClick = {
                     context.startActivity(
                         Intent(
@@ -563,17 +673,24 @@ private fun GestureListScreen(
                     )
                 }) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_mug),
-                        contentDescription = "Buy me a coffee"
+                        painter = painterResource(R.drawable.ic_sketch_mug),
+                        contentDescription = "Buy me a coffee",
+                        tint = Color.Unspecified
                     )
                 }
                 IconButton(onClick = onSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    Icon(
+                        painter = painterResource(R.drawable.ic_sketch_gear),
+                        contentDescription = "Settings",
+                        tint = Color.Unspecified
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // Sketchbook home (v1.4.0): the heading is handwritten,
-            // lowercase, with a wobbly underline and a doodle star.
+            // Sketchbook home (v1.4.1): the heading is handwritten,
+            // lowercase, with a long wobbly underline swoosh and a
+            // doodle star; a hand-drawn arrow points at the underline
+            // from below, like the concept image.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -584,7 +701,7 @@ private fun GestureListScreen(
                     )
                     SketchLine(
                         modifier = Modifier
-                            .fillMaxWidth(0.6f)
+                            .fillMaxWidth(0.85f)
                             .height(8.dp),
                         color = FlickBrand.TextWhite,
                         seed = 7L
@@ -594,6 +711,19 @@ private fun GestureListScreen(
                     painter = painterResource(R.drawable.ic_doodle_star),
                     contentDescription = null,
                     modifier = Modifier.size(26.dp)
+                )
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_doodle_arrow),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(30.dp, 20.dp)
+                        .padding(end = 48.dp)
+                        .graphicsLayer { scaleX = -1f }
                 )
             }
             Spacer(modifier = Modifier.height(10.dp))
@@ -712,14 +842,28 @@ private fun GestureListScreen(
                             )
                         }
                     }
-                    // A small doodle at the bottom of the list.
+                    // Doodles at the bottom of the list, like the
+                    // concept image's scattered stars and squiggles.
                     item {
-                        Box(
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Image(
+                                painter = painterResource(R.drawable.ic_doodle_star),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(24.dp))
+                            Image(
                                 painter = painterResource(R.drawable.ic_doodle_dots),
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp, 24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(24.dp))
+                            Image(
+                                painter = painterResource(R.drawable.ic_doodle_squiggle),
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp, 24.dp)
                             )
@@ -845,7 +989,15 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
                 seed = label.hashCode().toLong()
             )
         } else {
-            Spacer(modifier = Modifier.height(6.dp))
+            // The concept image underlines every tab with a wobbly
+            // line; the inactive ones are just fainter and white.
+            SketchLine(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp),
+                color = FlickBrand.TextWhite.copy(alpha = 0.45f),
+                seed = label.hashCode().toLong() + 50L
+            )
         }
     }
 }
@@ -866,50 +1018,71 @@ private fun GestureCard(
     val description = remember(gesture, appLabel) {
         gestureDescription(gesture, appLabel)
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            // Sketchbook home (v1.4.0): a wobbly hand-drawn frame
-            // instead of the plain rounded-rect border. The seed is
-            // the gesture id, so each card's wobble is stable.
-            .sketchyBorder(FlickBrand.TextWhite, seed = gesture.id)
-            // Tap opens the detail sheet; long-press still deletes,
-            // as before. Disabled gestures are dimmed so their state
-            // is obvious at a glance.
-            .combinedClickable(onClick = onClick, onLongClick = onDelete)
-            .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        GestureGlyph(
-            template = gesture.template,
-            modifier = Modifier.size(72.dp),
-            sketchy = true
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                gesture.name,
-                fontFamily = SketchbookFont,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                color = FlickBrand.TextWhite
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                // Sketchbook home (v1.4.1): a rougher wobbly
+                // hand-drawn frame instead of the plain rounded-rect
+                // border. The seed is the gesture id, so each card's
+                // wobble is stable.
+                .sketchyBorder(FlickBrand.TextWhite, seed = gesture.id)
+                // Tap opens the detail sheet; long-press still deletes,
+                // as before. Disabled gestures are dimmed so their state
+                // is obvious at a glance.
+                .combinedClickable(onClick = onClick, onLongClick = onDelete)
+                .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GestureGlyph(
+                template = gesture.template,
+                modifier = Modifier.size(72.dp),
+                sketchy = true
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
-                Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    gesture.name,
+                    fontFamily = SketchbookFont,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FlickBrand.TextWhite
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        description,
+                        fontFamily = SketchbookFont,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            DragHandle()
         }
-        Spacer(modifier = Modifier.width(8.dp))
-        DragHandle()
+        // A small doodle at the card's bottom-right corner, like the
+        // stars sprinkled around the rows in the concept image. The
+        // shape varies per gesture so the page does not look stamped.
+        Image(
+            painter = painterResource(
+                when ((gesture.id % 3L).toInt()) {
+                    0 -> R.drawable.ic_doodle_star
+                    1 -> R.drawable.ic_doodle_sparkle
+                    else -> R.drawable.ic_doodle_cluster
+                }
+            ),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 4.dp, y = 4.dp)
+                .size(16.dp)
+        )
     }
 }
 
@@ -1143,15 +1316,52 @@ private fun GestureGlyph(
                 cap = StrokeCap.Round,
                 join = StrokeJoin.Round
             )
-            for (stroke in strokes) {
-                if (stroke.size < 2) continue
-                val path = Path().apply {
-                    moveTo(stroke[0].x * scale + ox, stroke[0].y * scale + oy)
-                    for (i in 1 until stroke.size) {
-                        lineTo(stroke[i].x * scale + ox, stroke[i].y * scale + oy)
+            if (sketchy) {
+                // Rough chalky strokes (v1.4.1): the recorded points
+                // are jittered so the line looks hand-drawn, and a
+                // fainter offset pass is drawn under it, like chalk
+                // going over the same stroke twice.
+                val random = Random(template.hashCode().toLong())
+                val jitter = 1.5.dp.toPx()
+                fun jitteredPath(stroke: List<StrokePoint>, ox: Float, oy: Float): Path {
+                    return Path().apply {
+                        moveTo(stroke[0].x * scale + ox, stroke[0].y * scale + oy)
+                        for (i in 1 until stroke.size) {
+                            lineTo(
+                                stroke[i].x * scale + ox + (random.nextFloat() * 2f - 1f) * jitter,
+                                stroke[i].y * scale + oy + (random.nextFloat() * 2f - 1f) * jitter
+                            )
+                        }
                     }
                 }
-                drawPath(path, accent, style = style)
+                for (stroke in strokes) {
+                    if (stroke.size < 2) continue
+                    drawPath(jitteredPath(stroke, 0f, 0f), accent, style = style)
+                }
+                val faintStyle = Stroke(
+                    width = 2.2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+                for (stroke in strokes) {
+                    if (stroke.size < 2) continue
+                    drawPath(
+                        jitteredPath(stroke, 1.5.dp.toPx(), -1.dp.toPx()),
+                        accent.copy(alpha = 0.4f),
+                        style = faintStyle
+                    )
+                }
+            } else {
+                for (stroke in strokes) {
+                    if (stroke.size < 2) continue
+                    val path = Path().apply {
+                        moveTo(stroke[0].x * scale + ox, stroke[0].y * scale + oy)
+                        for (i in 1 until stroke.size) {
+                            lineTo(stroke[i].x * scale + ox, stroke[i].y * scale + oy)
+                        }
+                    }
+                    drawPath(path, accent, style = style)
+                }
             }
         }
     }

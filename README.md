@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-00E5FF" alt="Version 1.4.0">
+  <img src="https://img.shields.io/badge/version-1.4.1-00E5FF" alt="Version 1.4.1">
   <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
   <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
@@ -18,14 +18,21 @@
 ## ⬇️ Download
 
 <p align="center">
-  <a href="https://github.com/ibfavas/Flick/releases/download/v1.4.0/flick-1.4.0.apk">
-    <img src="assets/download-button.png" alt="Download flick-1.4.0.apk" width="320">
+  <a href="https://github.com/ibfavas/Flick/releases/download/v1.4.1/flick-1.4.1.apk">
+    <img src="assets/download-button.png" alt="Download flick-1.4.1.apk" width="320">
   </a>
 </p>
 
 <p align="center">
   📦 <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
 </p>
+
+## 🎉 What is new in 1.4.1
+
+✏️ The sketchbook home now looks like the concept: a rougher
+handwritten font, a sketch-style wordmark, mug and gear, wobblier
+hand-drawn frames, chalky gesture strokes, doodles everywhere, and
+a hand-drawn Add button. Nothing else changed. 👍
 
 ## 🎉 What is new in 1.4.0
 
