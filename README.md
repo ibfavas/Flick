@@ -19,8 +19,13 @@
 
 <p align="center">
   <a href="https://github.com/ibfavas/Flick/releases/download/v1.5.2/flick-1.5.2.apk">
-    <img src="assets/download-button.png" alt="Download flick-1.5.2.apk" width="320">
+    <img src="assets/download-button.png" alt="Download Flick for Android" width="340">
   </a>
+</p>
+
+<p align="center">
+  Tap it, install the APK and you are in. No account, no sign up,
+  nothing phoning home. 📲
 </p>
 
 <p align="center">
