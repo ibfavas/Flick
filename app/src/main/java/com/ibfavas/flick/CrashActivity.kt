@@ -7,18 +7,17 @@ import android.view.ViewGroup
 import android.widget.ScrollView
 import android.widget.TextView
 
-/**
- * Diagnostic screen (v1.0.2, fixed in v1.0.3): shows the crash report
- * captured by FlickApp in a plain ScrollView + TextView. Deliberately uses
- * no Compose, no DataStore and no coroutines, so it cannot crash the same
- * way the main app does. The user can screenshot this screen to share the
- * stack trace.
- *
- * v1.0.3 fix: v1.0.2 read the report only from the static CrashReportHolder,
- * which is null in this activity's fresh process (statics do not survive
- * process death). The report is now read in order: (a) the Intent extra
- * "report" (survives process death), (b) the static holder, (c) the newest
- * flick-crash-*.txt file in the crashes directory.
+/*
+ * Shows the crash report captured by FlickApp in a plain
+ * ScrollView + TextView. Deliberately no Compose, no
+ * DataStore and no coroutines, so it cannot crash the same
+ * way the main app does. The user can screenshot this
+ * screen to share the stack trace. Read order: (a) the
+ * Intent extra "report", (b) the static holder, (c) the
+ * newest flick-crash-*.txt file in the crashes directory.
+ * The static holder is null in this activity's fresh
+ * process, statics do not survive process death, so the
+ * Intent extra is the primary channel.
  */
 class CrashActivity : Activity() {
 
@@ -44,7 +43,7 @@ class CrashActivity : Activity() {
     }
 
     private fun loadReport(): String {
-        // (a) Intent extra — the primary channel, survives process death.
+        // (a) Intent extra, the primary channel, survives process death.
         val fromIntent = try {
             intent?.getStringExtra("report")
         } catch (_: Exception) {
@@ -52,7 +51,7 @@ class CrashActivity : Activity() {
         }
         if (!fromIntent.isNullOrBlank()) return fromIntent
 
-        // (b) Static holder — only works if this activity runs in the
+        // (b) Static holder, only works if this activity runs in the
         // same process that captured the crash (not the usual case).
         val fromHolder = CrashReportHolder.report
         if (!fromHolder.isNullOrBlank()) return fromHolder

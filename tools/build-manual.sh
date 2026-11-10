@@ -50,11 +50,11 @@ echo "== aapt2 link (also generates R.java) =="
 # aapt2 needs the package in the manifest itself (Gradle normally injects
 # the package, versionCode and versionName from the Gradle config).
 # Keep versionCode/versionName in sync with app/build.gradle.kts.
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="24"\n    android:versionName="1.5.1">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="com.ibfavas.flick"\n    android:versionCode="25"\n    android:versionName="1.5.2">|' \
   app/src/main/AndroidManifest.xml > "$BUILD/AndroidManifest.xml"
 # BUG 1 (fixed in v1.0.4): aapt2 link --java generates ONLY the app's R.java.
 # Library resources are linked as bare compiled flats with no package
-# attribution, so no library R.java files are produced — yet library
+# attribution, so no library R.java files are produced, yet library
 # bytecode references its own R classes (e.g. PoolingContainer reads
 # androidx.customview.poolingcontainer.R$id in its <clinit>, which crashed
 # the app on first setContent with NoClassDefFoundError). --extra-packages
@@ -85,9 +85,9 @@ echo "== javac (all generated R.java: app + every library package) =="
 echo "== kotlinc =="
 CP="$(cat build/deps/classpath.txt):$PLATFORM/android.jar:$BUILD/classes"
 # BUG 2 (fixed in v1.0.4): kotlinc SILENTLY IGNORES .java files.
-# Passing the generated R.java files here compiled only the .kt files —
+# Passing the generated R.java files here compiled only the .kt files,
 # `kotlinc R.java -d out` fails with "no source files" and mixed input
-# drops the .java silently — so v1.0.0–v1.0.3 shipped with NO R class at
+# drops the .java silently, so v1.0.0–v1.0.3 shipped with NO R class at
 # all in the dex (verified with dexdump: zero R class descriptors, not
 # even com.ibfavas.flick.R). Never pass .java files to kotlinc again;
 # compile them with javac above instead.

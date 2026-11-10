@@ -6,22 +6,20 @@ import android.content.Context
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 
-/**
- * Flick's accessibility service. It exists for exactly two actions that
- * Android offers no other way to do: locking the screen and taking a
- * screenshot. Both are performed with performGlobalAction, which only an
- * enabled accessibility service can call.
- *
- * The service is OPTIONAL: Flick works without it, and the lock-screen
- * and screenshot actions guide the user to enable it when it is off.
- * Nothing is observed: onAccessibilityEvent is a no-op, and the service
- * declares no feedback type and no event types in its config, so it
- * receives no events at all.
- *
- * The system binds this service, so the app cannot call it directly.
- * Instead the service keeps a static reference to itself (set in
- * onServiceConnected, cleared in onDestroy), and ActionExecutor uses
- * [performAction] through it.
+/*
+ * Accessibility service, for two actions Android offers
+ * no other way to do: lock screen and screenshot, both
+ * via performGlobalAction, which only an enabled
+ * accessibility service can call. It is optional: Flick
+ * works without it, and those two actions guide the user
+ * to enable it when it is off. Nothing is observed:
+ * onAccessibilityEvent is a no-op, and the service
+ * declares no feedback type and no event types in its
+ * config, so it receives no events at all. The system
+ * binds this service, so the app cannot call it directly;
+ * it keeps a static reference to itself (set in
+ * onServiceConnected, cleared in onDestroy), and
+ * ActionExecutor uses [performAction] through it.
  */
 class FlickAccessibilityService : AccessibilityService() {
 

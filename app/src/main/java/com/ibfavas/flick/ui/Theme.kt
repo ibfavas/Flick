@@ -6,26 +6,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/**
- * Flick's brand, AMOLED edition (v1.0.8): pitch black everywhere, white
- * text, one bright cyan accent. Pure black backgrounds save battery on
- * AMOLED screens and make the cyan pop. The logo is a minimal white
- * swoosh ending in a cyan dot; the wordmark is rounded lowercase
- * "flick" with the dot of the i in cyan. The app is always dark.
+/*
+ * Flick's brand: pitch black everywhere, white text, one
+ * bright cyan accent. Pure black backgrounds save battery
+ * on AMOLED screens and make the cyan pop. The logo is a
+ * minimal white swoosh ending in a cyan dot; the wordmark
+ * is rounded lowercase "flick" with the dot of the i in
+ * cyan. The app is always dark.
  *
- * The deep teal of v1.0.6/v1.0.7 is gone from the theme: surfaces are
- * pure black or at most #0A0A0A, and cards are separated from the
- * background by a thin neutral outline instead of a lighter surface.
- * Teal survives only inside the brand assets themselves (the launcher
- * icon and the wordmark image), which keep their own colours.
- *
- * v1.2.0: the accent is a setting now, not a constant. Cyan stays the
- * default, but Settings offers five more accents. FlickTheme takes the
- * accent and publishes it as [LocalAccent]; every accent-coloured bit
- * of UI (buttons via colorScheme.primary, selected tabs, gesture
- * glyphs, the pad wave, the Done label) reads it from there, so a
- * change applies app-wide at once. The stroke colour setting stays
- * separate: it colours only the stroke you draw.
+ * The accent is a setting now, not a constant. Cyan stays
+ * the default, but Settings offers five more accents.
+ * FlickTheme takes the accent and publishes it as
+ * [LocalAccent]; every accent-coloured bit of UI (buttons
+ * via colorScheme.primary, selected tabs, gesture glyphs,
+ * the pad wave, the Done label) reads it from there, so a
+ * change applies app-wide at once. The stroke colour
+ * setting stays separate: it colours only the stroke you
+ * draw.
  */
 object FlickBrand {
     val AmoledBackground = Color(0xFF000000)
@@ -39,12 +36,11 @@ object FlickBrand {
     val TextMuted = Color(0xFFB3B3B3)
     val Outline = Color(0xFF2E2E2E)
 
-    /**
-     * The drawn stroke's defaults (v1.0.11): brand cyan at 14px. Both
-     * are configurable in Settings (stroke width slider, colour
-     * presets); these values are only the defaults. Card glyphs in
-     * the list follow the app accent (v1.2.0), not the stroke colour.
-     */
+    // The drawn stroke's defaults: brand cyan at 14px. Both
+    // are configurable in Settings (stroke width slider,
+    // colour presets); these values are only the defaults.
+    // Card glyphs in the list follow the app accent, not the
+    // stroke colour.
     val StrokeColor = Cyan
     const val StrokeWidth: Float = 14f
 }

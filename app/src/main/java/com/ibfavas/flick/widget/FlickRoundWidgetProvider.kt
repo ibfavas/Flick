@@ -24,7 +24,7 @@ class FlickRoundWidgetProvider : AppWidgetProvider() {
     ) {
         for (appWidgetId in appWidgetIds) {
             val intent = Intent(context, DrawActivity::class.java).apply {
-                // EXCLUDE_FROM_RECENTS (v1.2.1): the pad must not
+                // EXCLUDE_FROM_RECENTS: the pad must not
                 // appear in the recents list.
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TASK or

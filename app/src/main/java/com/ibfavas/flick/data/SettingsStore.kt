@@ -14,16 +14,12 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "flick_settings")
 
-/**
- * App settings stored in DataStore Preferences.
- *
- * v1.0.11: the stroke is configurable again (v1.0.7 removed these
- * settings; the user changed his mind and asked for them back). The
- * stroke width is a slider and the colour is one of a small set of
- * presets, cyan by default. "Auto close on fail" is gone: on the
- * overlay pad a gesture that matches nothing now always closes the
- * pad at once, with no message and no setting for it.
- */
+// App settings stored in DataStore Preferences. The stroke
+// is configurable: stroke width is a slider and the colour
+// is one of a small set of presets, cyan by default.
+// "Auto close on fail" is gone: on the overlay pad a gesture
+// that matches nothing now always closes the pad at once,
+// with no message and no setting for it.
 class SettingsStore(private val context: Context) {
 
     companion object {
@@ -73,13 +69,11 @@ class SettingsStore(private val context: Context) {
             0xFFC6FF00, 0xFFFF9100, 0xFFFF5252, 0xFF64FFDA
         ).map { it.toInt() }
 
-        /**
-         * App accent colour (v1.2.0): the colour of buttons,
-         * selections, highlights, the Save pill and gesture glyphs,
-         * app-wide. Cyan by default. Every preset is light enough
-         * for black text on top. This is separate from the stroke
-         * colour above, which colours only the stroke you draw.
-         */
+        // App accent colour: the colour of buttons, selections,
+        // highlights, the Save pill and gesture glyphs, app-wide.
+        // Cyan by default. Every preset is light enough for black
+        // text on top. Separate from the stroke colour above,
+        // which colours only the stroke you draw.
         const val DEFAULT_ACCENT_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
 
         /** Accent colour presets offered in Settings, as ARGB ints. */

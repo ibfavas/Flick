@@ -12,11 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 
-/**
- * Small press feedback: the element shrinks slightly while a finger is
- * down, then springs back. It only observes pointer state and never
- * consumes events, so clicks keep working exactly as before. Keep the
- * spring soft so the motion feels smooth, not bouncy.
+/*
+ * Press feedback: the element shrinks slightly while a
+ * finger is down, then springs back. It only observes
+ * pointer state and never consumes events, so clicks keep
+ * working exactly as before. Keep the spring soft so the
+ * motion feels smooth, not bouncy.
  */
 @Composable
 fun Modifier.pressScale(): Modifier {

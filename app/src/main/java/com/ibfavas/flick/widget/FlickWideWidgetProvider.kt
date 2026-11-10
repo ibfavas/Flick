@@ -10,8 +10,8 @@ import com.ibfavas.flick.DrawActivity
 import com.ibfavas.flick.R
 
 /**
- * The wide widget (3x1): the flick wordmark — rounded lowercase white
- * letters with a cyan dot on the i — on a pitch-black background. The
+ * The wide widget (3x1): the flick wordmark, rounded lowercase white
+ * letters with a cyan dot on the i, on a pitch-black background. The
  * whole widget is the button: tapping it opens the drawing pad. The
  * request code is offset so its PendingIntent can never collide with
  * the other widgets' (same target activity, same intent).
@@ -25,7 +25,7 @@ class FlickWideWidgetProvider : AppWidgetProvider() {
     ) {
         for (appWidgetId in appWidgetIds) {
             val intent = Intent(context, DrawActivity::class.java).apply {
-                // EXCLUDE_FROM_RECENTS (v1.2.1): the pad must not
+                // EXCLUDE_FROM_RECENTS: the pad must not
                 // appear in the recents list.
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TASK or

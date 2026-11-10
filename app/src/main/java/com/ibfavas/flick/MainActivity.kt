@@ -22,11 +22,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Edge-to-edge (v1.0.10): the app draws behind the system bars
+        // Edge-to-edge: the app draws behind the system bars
         // with transparent, dark-icon bars, and the screens pad
-        // themselves below the status bar (statusBarsPadding) instead
-        // of the old fitsSystemWindows behaviour, so no title or
-        // button ever sits under the notification bar.
+        // themselves below the status bar (statusBarsPadding)
+        // instead of the old fitsSystemWindows behaviour, so no
+        // title or button ever sits under the notification bar.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
             val settings = SettingsStore(this)
             val openSettings = intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false)
             setContent {
-                // The app accent (v1.2.0) is a setting: read it here so
+                // The app accent is a setting: read it here so
                 // a change in Settings recolours the whole app at once.
                 val accentArgb by settings.accentColor.collectAsState(
                     initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
@@ -47,8 +47,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         } catch (e: Throwable) {
-            // Diagnostic safety net (v1.0.2): log, then rethrow so the
-            // global handler in FlickApp captures and displays the trace.
+            // Diagnostic safety net: log, then rethrow so the
+            // global handler in FlickApp captures and displays
+            // the trace.
             Log.e("Flick", "MainActivity onCreate failed", e)
             e.printStackTrace()
             throw e

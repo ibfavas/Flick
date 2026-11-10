@@ -31,11 +31,10 @@ enum class ActionType {
     TOGGLE_BLUETOOTH,
     /** Flip Do Not Disturb, needs notification-policy access. */
     TOGGLE_DND,
-    /**
-     * Run a flow: several actions in order. Payload is a JSON array of
-     * steps, encoded by FlowCodec, each step {"type": "...", "payload": "..."}.
-     * Steps are leaf actions only — a flow never contains another flow.
-     */
+    // Run a flow: several actions in order. Payload is a JSON
+    // array of steps, encoded by FlowCodec, each step
+    // {"type": "...", "payload": "..."}. Steps are leaf actions
+    // only, a flow never contains another flow.
     RUN_FLOW
 }
 
@@ -43,29 +42,27 @@ enum class ActionType {
 data class Gesture(
     val id: Long = 0,
     val name: String,
-    /** Multi-stroke template, serialized by Recognizer.strokesToString:
-     *  strokes separated by "|", points inside a stroke are "x,y"
-     *  separated by ";". Old single-stroke templates ("x,y;x,y;...") with
-     *  no "|" load back as one stroke, so gestures recorded before
-     *  multi-stroke support keep working. */
+    // Multi-stroke template, serialized by
+    // Recognizer.strokesToString: strokes separated by "|",
+    // points inside a stroke are "x,y" separated by ";". Old
+    // single-stroke templates with no "|" load back as one
+    // stroke, so gestures recorded before multi-stroke support
+    // keep working.
     val template: String,
     val actionType: ActionType,
     /** Action payload: package name for LAUNCH_APP, URL for OPEN_URL, empty otherwise. */
     val payload: String = "",
-    /**
-     * Extra recorded samples of the same gesture (v1.0.8): additional
-     * strokesToString strings, one per sample, joined by "\n". The
-     * recognizer matches against every sample and takes the best score,
-     * so a gesture drawn a little differently still matches. At most
-     * 3 samples in total (template + 2 extras). Empty for gestures
-     * recorded before multi-sample support.
-     */
+    // Extra recorded samples of the same gesture: additional
+    // strokesToString strings, one per sample, joined by "\n".
+    // The recognizer matches against every sample and takes
+    // the best score, so a gesture drawn a little differently
+    // still matches. At most 3 samples in total (template + 2
+    // extras). Empty for gestures recorded before multi-sample
+    // support.
     val extraTemplates: String = "",
-    /**
-     * Whether the gesture runs from the pad (v1.0.10). Disabled
-     * gestures stay in the list, dimmed, but never match or run.
-     * Toggled from the gesture detail sheet.
-     */
+    // Whether the gesture runs from the pad. Disabled gestures
+    // stay in the list, dimmed, but never match or run. Toggled
+    // from the gesture detail sheet.
     val enabled: Boolean = true
 ) {
     /** All recorded samples of this gesture, first sample first. */
@@ -73,7 +70,7 @@ data class Gesture(
         (listOf(template) + extraTemplates.split("\n").filter { it.isNotBlank() })
             .take(MAX_SAMPLES)
 
-    /** Number of recorded samples (1 for gestures recorded before v1.0.8). */
+    /** Number of recorded samples (1 for older gestures recorded before multi-sample support). */
     fun sampleCount(): Int = allTemplates().size
 
     /** Every sample as a recognizer template, all under this gesture's name. */
@@ -89,14 +86,13 @@ data class Gesture(
         /** Maximum samples per gesture: the first plus two extras. */
         const val MAX_SAMPLES = 3
 
-        /**
-         * A name no other gesture uses (case-insensitive, ignoring the
-         * gesture with [excludeId] when renaming). Duplicate names
-         * made recognition ambiguous: the pad and the test pad looked
-         * the matched gesture up by name, so the wrong gesture could
-         * run. Returns the base name unchanged when it is free,
-         * otherwise appends " 2", " 3", and so on.
-         */
+        // A name no other gesture uses (case-insensitive,
+        // ignoring the gesture with excludeId when renaming).
+        // Duplicate names made recognition ambiguous: the pad
+        // looked the matched gesture up by name, so the wrong
+        // gesture could run. Returns the base name unchanged
+        // when it is free, otherwise appends " 2", " 3", and
+        // so on.
         fun uniqueName(base: String, existing: List<Gesture>, excludeId: Long = 0): String {
             val taken = existing.filter { it.id != excludeId }
                 .map { it.name.trim().lowercase() }.toSet()
@@ -109,17 +105,13 @@ data class Gesture(
     }
 }
 
-/**
- * Gesture library backed by plain SQLite (SQLiteOpenHelper).
- *
- * Note: this was originally specified as Room, but Room's annotation
- * processing needs Gradle/KSP, and Gradle cannot run in the build sandbox
- * used for v1.0.0 (its daemon protocol needs loopback TCP, which the sandbox
- * blocks). The storage behaviour is identical: a local "gestures" table with
- * the same columns, full CRUD, and a Flow of all gestures ordered by name.
- * If a Gradle build is ever used again, this file can go back to Room
- * without touching the UI, which only depends on GestureDao's API.
- */
+// Gesture library backed by plain SQLite
+// (SQLiteOpenHelper). Room was the plan, but its annotation
+// processing needs Gradle/KSP and Gradle cannot run in the
+// build sandbox (its daemon needs loopback TCP, which the
+// sandbox blocks). Same behaviour: a local "gestures" table
+// with the same columns, full CRUD, and a Flow of all
+// gestures ordered by name.
 class GestureDao(context: Context) {
 
     private val helper = object : SQLiteOpenHelper(
@@ -139,13 +131,13 @@ class GestureDao(context: Context) {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // v2 (v1.0.8): extra recorded samples per gesture.
+            // v2: extra recorded samples per gesture.
             if (oldVersion < 2) {
                 db.execSQL(
                     "ALTER TABLE gestures ADD COLUMN extraTemplates TEXT NOT NULL DEFAULT ''"
                 )
             }
-            // v3 (v1.0.10): enable/disable per gesture from the detail sheet.
+            // v3: enable/disable per gesture from the detail sheet.
             if (oldVersion < 3) {
                 db.execSQL(
                     "ALTER TABLE gestures ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
@@ -166,15 +158,6 @@ class GestureDao(context: Context) {
 
     suspend fun getAll(): List<Gesture> = withContext(Dispatchers.IO) {
         readAll(helper.readableDatabase)
-    }
-
-    suspend fun getById(id: Long): Gesture? = withContext(Dispatchers.IO) {
-        helper.readableDatabase.query(
-            "gestures", null, "id = ?", arrayOf(id.toString()),
-            null, null, null
-        ).use { cursor ->
-            if (cursor.moveToFirst()) rowToGesture(cursor) else null
-        }
     }
 
     suspend fun insert(gesture: Gesture): Long = withContext(Dispatchers.IO) {

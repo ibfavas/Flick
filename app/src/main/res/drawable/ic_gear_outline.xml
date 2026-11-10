@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Settings gear icon, outline style (v1.4.2): a stroked ring and
+<!-- Settings gear icon, outline style: a stroked ring and
      centre circle with eight filled teeth, matching the outlined home
      top bar icons. Black so the Icon tint recolours it cyan. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

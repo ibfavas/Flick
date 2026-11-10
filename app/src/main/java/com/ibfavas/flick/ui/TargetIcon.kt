@@ -64,7 +64,7 @@ fun iconFor(type: ActionType): ImageVector = when (type) {
  * The target's icon for a gesture: the app's own icon for app gestures,
  * the action's icon otherwise. Shared by the gesture cards, the detail
  * sheet and the overlay pad's "Opening" banner. [circular] clips the
- * app icon to a circle (v1.4.2 home cards); the default rounded
+ * app icon to a circle (home cards); the default rounded
  * rectangle is kept everywhere else.
  */
 @Composable

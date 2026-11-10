@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Wide widget (2x1): the flick wordmark — rounded lowercase white
-     letters with a cyan dot on the i — on a pitch-black background,
+<!-- Wide widget (2x1): the flick wordmark, rounded lowercase white
+     letters with a cyan dot on the i, on a pitch-black background,
      matching the AMOLED theme. The whole widget is the button: tap it
      to open the drawing pad. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"

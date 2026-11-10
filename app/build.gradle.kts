@@ -12,8 +12,8 @@ android {
         applicationId = "com.ibfavas.flick"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.5.1"
+        versionCode = 25
+        versionName = "1.5.2"
     }
 
     signingConfigs {

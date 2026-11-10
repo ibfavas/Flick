@@ -39,19 +39,19 @@ import kotlinx.coroutines.launch
  */
 data class Feedback(val vibrate: Boolean = true, val sound: Boolean = false)
 
-/**
- * Runs the action attached to a gesture. Shared by the in-app pad, the
- * widget flow and the Quick Settings tile flow so behaviour is identical
- * everywhere.
+/*
+ * Runs the action attached to a gesture. Shared by the
+ * in-app pad, the widget flow and the Quick Settings
+ * tile flow so behaviour is identical everywhere.
  *
- * Platform honesty, enforced here rather than faked in the UI:
- * - Wi-Fi and Bluetooth cannot be flipped silently by an app on
- *   Android 12 and up, so those actions open the system panel for the
- *   user to flip the switch. They are labelled as such in the UI.
- * - Lock screen and screenshot need Flick's accessibility service
- *   enabled; when it is off, the user is guided to turn it on.
- * - Do Not Disturb needs notification-policy access; when it is not
- *   granted, the user is guided to grant it.
+ * Wi-Fi and Bluetooth cannot be flipped silently by an
+ * app on Android 12 and up, so those actions open the
+ * system panel for the user to flip the switch. They are
+ * labelled as such in the UI. Lock screen and screenshot
+ * need Flick's accessibility service enabled; when it is
+ * off, the user is guided to turn it on. Do Not Disturb
+ * needs notification-policy access; when it is not
+ * granted, the user is guided to grant it.
  */
 object ActionExecutor {
 
@@ -108,8 +108,8 @@ object ActionExecutor {
         flowScope.launch {
             for ((index, step) in steps.withIndex()) {
                 if (index > 0) delay(600)
-                // One failing step must not kill the rest of the flow
-                // (v1.1.0): a step whose app is uninstalled, or whose
+                // One failing step must not kill the rest of the
+                // flow: a step whose app is uninstalled, or whose
                 // permission was revoked, is skipped and the flow
                 // carries on with the next step.
                 runCatching { executeStep(context, step) }
@@ -243,7 +243,7 @@ object ActionExecutor {
 
     /**
      * The pad closes right after a match, so the screenshot waits a
-     * moment first — otherwise it would capture the pad itself.
+     * moment first, otherwise it would capture the pad itself.
      */
     private fun takeScreenshot(context: Context) {
         flowScope.launch {
@@ -271,8 +271,9 @@ object ActionExecutor {
     }
 
     private fun openWifiPanel(context: Context) {
-        // Android 12 and up do not let an app flip Wi-Fi silently, so the
-        // honest behaviour is the system panel, where the user flips it.
+        // Android 12 and up do not let an app flip Wi-Fi
+        // silently, so the honest behaviour is the system
+        // panel, where the user flips it.
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Intent(Settings.Panel.ACTION_WIFI)
         } else {
@@ -333,20 +334,17 @@ object ActionExecutor {
         }
     }
 
-    // ---------------------------------------------------------------- feedback
+    // feedback
 
-    /**
-     * A short vibration when a gesture runs. Respects the system: no
-     * vibrator, no buzz. Explicit full amplitude and an 80 ms buzz:
-     * the old 50 ms at the default amplitude was too faint to feel
-     * on some phones (v1.5.0).
-     *
-     * v1.5.1: the old version swallowed every failure silently, so a
-     * phone that could not vibrate looked exactly like one that could.
-     * Failures are now logged (tag "Flick"), and if the VibratorManager
-     * path fails or reports no vibrator, the legacy vibrator service
-     * is tried before giving up. Vibration still never breaks the
-     * action launch.
+    /*
+     * A short vibration when a gesture runs. Respects the
+     * system: no vibrator, no buzz. Explicit full amplitude
+     * and an 80 ms buzz: the old 50 ms at the default
+     * amplitude was too faint to feel on some phones.
+     * Failures are now logged (tag "Flick"), and if the
+     * VibratorManager path fails or reports no vibrator, the
+     * legacy vibrator service is tried before giving up.
+     * Vibration still never breaks the action launch.
      */
     fun testVibrate(context: Context) {
         vibrate(context)
@@ -399,12 +397,13 @@ object ActionExecutor {
         }
     }
 
-    /**
-     * A short beep when a gesture runs. Plays the phone's notification
-     * sound, so it follows notification volume. The old ToneGenerator
-     * beep failed silently on some phones (v1.5.0): its constructor can
-     * throw when the audio service cannot allocate a tone generator,
-     * and the failure was swallowed. ToneGenerator is kept only as a
+    /*
+     * A short beep when a gesture runs. Plays the phone's
+     * notification sound, so it follows notification volume.
+     * The old ToneGenerator beep failed silently on some
+     * phones: its constructor can throw when the audio
+     * service cannot allocate a tone generator, and the
+     * failure was swallowed. ToneGenerator is kept only as a
      * fallback when no notification sound is set.
      */
     private fun playTone(context: Context) {

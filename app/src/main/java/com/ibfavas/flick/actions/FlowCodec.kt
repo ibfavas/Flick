@@ -12,7 +12,7 @@ data class FlowStep(val type: ActionType, val payload: String = "")
 
 /**
  * Encodes a flow (a list of steps) into the gesture payload string and
- * back. Plain org.json, which ships in the Android framework — no extra
+ * back. Plain org.json, which ships in the Android framework, no extra
  * dependency. Format: [{"type":"LAUNCH_APP","payload":"com.example"},
  * {"type":"FLASHLIGHT_ON","payload":""}]. Invalid entries are skipped
  * on decode instead of failing the whole flow.

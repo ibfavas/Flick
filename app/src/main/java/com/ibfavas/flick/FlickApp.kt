@@ -17,16 +17,14 @@ object CrashReportHolder {
     var report: String? = null
 }
 
-/**
- * Diagnostic Application class (v1.0.2, fixed in v1.0.3): installs a global uncaught-exception
- * handler first thing in onCreate, so that when the app crashes on launch
- * the real stack trace is captured, saved to a file, and shown on screen
- * in CrashActivity instead of Android's generic "keeps stopping" dialog.
- *
- * v1.0.3 fixes: the crash file path is computed once per crash (v1.0.2
- * computed it twice with different timestamps) and the report is passed
- * to CrashActivity via an Intent extra, because the static holder does
- * not survive the process kill/restart.
+/*
+ * Installs a global uncaught-exception handler first thing
+ * in onCreate, so a crash on launch is captured, saved to
+ * a file, and shown in CrashActivity instead of Android's
+ * generic "keeps stopping" dialog. The crash file path is
+ * computed once per crash and the report is passed to
+ * CrashActivity via an Intent extra, because the static
+ * holder does not survive the process kill/restart.
  */
 class FlickApp : Application() {
 
@@ -38,20 +36,18 @@ class FlickApp : Application() {
     private fun installCrashHandler() {
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             try {
-                // Compute the crash file path ONCE per crash and reuse it
-                // for both the report header and the actual write. (v1.0.2
-                // computed it twice, so the header named a file that was
-                // never written.)
+                // Compute the crash file path once per crash and
+                // reuse it for both the report header and the
+                // actual write.
                 val path = crashFilePath()
                 val report = buildReport(throwable, path)
                 CrashReportHolder.report = report
                 writeReportFile(report, path)
                 val intent = Intent(this, CrashActivity::class.java).apply {
-                    // Intent extras survive process death; the static holder
-                    // does not (v1.0.2 bug: CrashActivity ran in a fresh
-                    // process where the holder was null). Skip the extra if
-                    // the report is huge (Binder limit) — CrashActivity then
-                    // falls back to the file written above.
+                    // Intent extras survive process death; the
+                    // static holder does not. Skip the extra if
+                    // the report is huge (Binder limit); CrashActivity
+                    // then falls back to the file written above.
                     if (report.length < 200_000) putExtra("report", report)
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or

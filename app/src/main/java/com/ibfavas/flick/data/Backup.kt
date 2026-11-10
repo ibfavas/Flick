@@ -3,21 +3,23 @@ package com.ibfavas.flick.data
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Backup and restore for the gesture library (v1.0.9).
+/*
+ * Backup and restore for the gesture library.
  *
  * Format, one JSON object:
  * {"version":1,"app":"Flick","gestures":[
  *   {"name":"...","template":"...","extraTemplates":"...","actionType":"LAUNCH_APP","payload":"...","enabled":true}
  * ]}
  *
- * "enabled" is optional on import: a backup written before v1.0.10 has
- * no such field and imports as enabled.
+ * "enabled" is optional on import: a backup written
+ * before it existed imports as enabled.
  *
- * Import is defensive: the file is validated before anything is
- * written, invalid entries are skipped and counted, and gestures whose
- * name already exists (case-insensitive, trimmed) are skipped, never
- * duplicated. A bad file returns an error instead of crashing.
+ * Import is defensive: the file is validated before
+ * anything is written, invalid entries are skipped and
+ * counted, and gestures whose name already exists
+ * (case-insensitive, trimmed) are skipped, never
+ * duplicated. A bad file returns an error instead of
+ * crashing.
  */
 object Backup {
 

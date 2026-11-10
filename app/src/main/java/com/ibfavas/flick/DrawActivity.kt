@@ -95,12 +95,12 @@ import java.util.function.Consumer
  * black tint, so the pad is clearly a surface of its own. The stroke
  * follows the Settings colour and width.
  *
- * The pad has no Done or Clear buttons (v1.0.11): a gesture is
+ * The pad has no Done or Clear buttons: a gesture is
  * recognised automatically once the pen-up timer expires. On a match
  * the pad shows "Opening <name>" with the target's icon at the top
  * and a soft cyan wave sweeping from the bottom of the pad to the
  * top, then runs the action and closes. On no match it closes at
- * once — no message, no prompt. If no gesture is drawn within the
+ * once, no message, no prompt. If no gesture is drawn within the
  * overlay timeout, the pad closes on its own (once drawing starts,
  * multi-stroke keeps it open until the gesture is done).
  *
@@ -110,20 +110,21 @@ import java.util.function.Consumer
 class DrawActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Edge-to-edge (v1.0.10), same as MainActivity: transparent
-        // system bars, and the pad's header/top row pad themselves
-        // below the status bar (statusBarsPadding) so the logo, the
+        // Edge-to-edge, same as MainActivity: transparent
+        // system bars, and the pad's header pads itself below
+        // the status bar (statusBarsPadding) so the logo, the
         // close X and the gear never sit under the notification bar.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
-        // Frosted glass starts at the window: a transparent background
-        // with no dim, so the screen underneath can be blurred and
-        // tinted by the content instead of hidden. The theme
-        // (Theme.Flick.Draw) already sets this up; these calls make it
-        // explicit so a theme change cannot make the pad solid by accident.
+        // Frosted glass starts at the window: a transparent
+        // background with no dim, so the screen underneath can
+        // be blurred and tinted by the content instead of
+        // hidden. The theme already sets this up; these calls
+        // make it explicit so a theme change cannot make the
+        // pad solid by accident.
         window.setBackgroundDrawableResource(android.R.color.transparent)
         window.setDimAmount(0f)
 
@@ -131,8 +132,8 @@ class DrawActivity : ComponentActivity() {
         val settings = SettingsStore(this)
 
         setContent {
-            // The app accent (v1.2.0) is a setting: read it here so
-            // a change in Settings recolours the pad at once.
+            // The app accent is a setting: read it here so a
+            // change in Settings recolours the pad at once.
             val accentArgb by settings.accentColor.collectAsState(
                 initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
             )
@@ -140,10 +141,10 @@ class DrawActivity : ComponentActivity() {
                 DrawScreen(
                     dao = dao,
                     settings = settings,
-                    // Runs the action only (v1.0.12): DrawScreen closes
+                    // Runs the action only: DrawScreen closes
                     // the pad itself with a smooth fade-out after this
                     // returns, so the close is never cut short by a
-                    // finish here, and never skipped if this throws —
+                    // finish here, and never skipped if this throws,
                     // DrawScreen's finally handles the close.
                     onMatched = { gesture, feedback ->
                         try {
@@ -178,13 +179,14 @@ private fun DrawScreen(
     val activity = LocalContext.current as? ComponentActivity
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
-    // Cross-window blur can be switched off by the system at runtime
-    // (battery saver, video playback, a developer override, or the
-    // device maker), and setBackgroundBlurRadius is then a silent
-    // no-op: the pad shows the sharp screen under only the tint, which
-    // is why the blur looked broken (v1.5.0). Track the real state and
-    // fall back to a stronger tint when blur is off, so the pad stays
-    // a readable surface instead of a barely tinted clear sheet.
+    // Cross-window blur can be switched off by the system at
+    // runtime (battery saver, video playback, a developer
+    // override, or the device maker), and
+    // setBackgroundBlurRadius is then a silent no-op: the pad
+    // shows the sharp screen under only the tint. Track the
+    // real state and fall back to a stronger tint when blur
+    // is off, so the pad stays a readable surface instead of
+    // a barely tinted clear sheet.
     val windowManager = activity?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
     var blurEnabled by remember {
         mutableStateOf(windowManager?.isCrossWindowBlurEnabled ?: true)
@@ -212,8 +214,8 @@ private fun DrawScreen(
     val strokeColorArgb by settings.strokeColor.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
-    // The pad wave follows the app accent (v1.2.0), read here
-    // because the Canvas draw scope below is not composable.
+    // The pad wave follows the app accent, read here because
+    // the Canvas draw scope below is not composable.
     val accent = accentColor()
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
@@ -224,10 +226,11 @@ private fun DrawScreen(
     var matched by remember { mutableStateOf<Gesture?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
-    // The gesture library, observed so the prepared templates stay
-    // fresh. Prepared once per library change (v1.1.0): normalising
-    // every template variant on every recognition was the pad's main
-    // CPU cost, and recognition now runs off the main thread.
+    // The gesture library, observed so the prepared templates
+    // stay fresh. Prepared once per library change:
+    // normalising every template variant on every recognition
+    // was the pad's main CPU cost, and recognition now runs
+    // off the main thread.
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val prepared = remember(gestures) {
         Recognizer.prepareTemplates(
@@ -240,11 +243,12 @@ private fun DrawScreen(
         }.toMap()
     }
     LaunchedEffect(Unit) { visible = true }
-    // Smooth close (v1.0.12): the pad never snaps shut. Every close
-    // goes through closeSmoothly(), which starts the fade-out (and a
-    // slight scale-down) and only finishes the activity once the
-    // animation has played (~250 ms). The `closing` guard keeps a
-    // second close request from cutting the animation short.
+    // Smooth close: the pad never snaps shut. Every close
+    // goes through closeSmoothly(), which starts the fade-out
+    // (and a slight scale-down) and only finishes the activity
+    // once the animation has played (~250 ms). The `closing`
+    // guard keeps a second close request from cutting the
+    // animation short.
     var closing by remember { mutableStateOf(false) }
     fun closeSmoothly() {
         if (closing) return
@@ -264,12 +268,13 @@ private fun DrawScreen(
         label = "openingWave"
     )
 
-    // Safety net (v1.0.12): once a gesture has matched, the pad must
-    // go away even if the launch path above is interrupted for any
-    // reason. The normal path finishes at ~650 ms + a 250 ms fade;
-    // this fires at 1500 ms only if the activity is somehow still
-    // alive. It closes smoothly too, and the `closing` guard makes
-    // it a no-op if a fade is already running.
+    // Safety net: once a gesture has matched, the pad must go
+    // away even if the launch path above is interrupted for any
+    // reason. The normal path finishes at ~650 ms + a 250 ms
+    // fade; this fires at 1500 ms only if the activity is
+    // somehow still alive. It closes smoothly too, and the
+    // `closing` guard makes it a no-op if a fade is already
+    // running.
     LaunchedEffect(matched) {
         if (matched != null) {
             delay(1500)
@@ -277,15 +282,13 @@ private fun DrawScreen(
         }
     }
 
-    // Blur the screen behind the window (Android 12 and up). The blur
-    // radius comes from settings; 0 means no blur, just the tint.
-    // v1.5.1: the radius used to be applied only once, when the blur
-    // setting changed. A radius set before the window attaches, or
-    // dropped by the system while the pad is paused, was silently
-    // lost, so the pad showed a sharp screen under the tint. It is
-    // now re-applied whenever the setting changes, whenever the
-    // system blur state changes, and every time the pad comes back
-    // to the foreground.
+    // Blur the screen behind the window (Android 12 and up).
+    // The radius comes from settings; 0 means no blur, just
+    // the tint. It is re-applied whenever the setting
+    // changes, whenever the system blur state changes, and
+    // every time the pad comes back to the foreground: a
+    // radius set before the window attaches, or dropped while
+    // the pad is paused, would otherwise be silently lost.
     fun applyBlur() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
@@ -320,9 +323,9 @@ private fun DrawScreen(
         visible = visible,
         enter = fadeIn(animationSpec = tween(200)) +
             scaleIn(initialScale = 0.98f, animationSpec = tween(200)),
-        // Smooth exit (v1.0.12): a 250 ms fade-out with a slight
-        // scale-down, instead of snapping shut. closeSmoothly() waits
-        // this out before finishing the activity.
+        // Smooth exit: a 250 ms fade-out with a slight
+        // scale-down, instead of snapping shut. closeSmoothly()
+        // waits this out before finishing the activity.
         exit = fadeOut(animationSpec = tween(250)) +
             scaleOut(targetScale = 0.97f, animationSpec = tween(250)),
         modifier = Modifier.fillMaxSize()
@@ -346,25 +349,23 @@ private fun DrawScreen(
                     scope.launch {
                         try {
                             // Recognition is CPU work: off the main
-                            // thread (v1.1.0), against the prepared
-                            // library. Disabled gestures never run:
-                            // they are left out of the match entirely
-                            // (v1.0.10).
+                            // thread, against the prepared library.
+                            // Disabled gestures never run: they are
+                            // left out of the match entirely.
                             val match = withContext(Dispatchers.Default) {
                                 Recognizer.recognizeMultiPrepared(raw, prepared)
                             }
-                            // The match carries its source template, so
-                            // the gesture is found even when two gestures
-                            // share a name; the name lookup is the
-                            // fallback for gestures recorded before
-                            // v1.1.0.
+                            // The match carries its source template,
+                            // so the gesture is found even when two
+                            // gestures share a name; the name lookup
+                            // is the fallback for older gestures.
                             val gesture = match?.source?.let { templateToGesture[it] }
                                 ?: match?.let { m ->
                                     gestures.firstOrNull { it.name == m.template.name }
                                 }
                             if (gesture == null) {
                                 // No match: close smoothly. No message,
-                                // no prompt, no setting for it (v1.0.11).
+                                // no prompt, no setting for it.
                                 closeSmoothly()
                             } else {
                                 matched = gesture
@@ -372,7 +373,7 @@ private fun DrawScreen(
                                 try {
                                     // Launch first, fade behind it: the
                                     // app comes up while the pad
-                                    // dissolves underneath (v1.0.12).
+                                    // dissolves underneath.
                                     onMatched(gesture, Feedback(vibrateOnRun, soundOnRun))
                                 } finally {
                                     closeSmoothly()
@@ -392,8 +393,8 @@ private fun DrawScreen(
                 strokeOutline = true,
                 strokeColor = Color(strokeColorArgb),
                 strokeWidth = strokeWidthPx,
-                // No Done/Clear on the overlay pad (v1.0.11): the
-                // gesture is recognised automatically when the timer
+                // No Done/Clear on the overlay pad: the gesture
+                // is recognised automatically when the timer
                 // expires, so the buttons have nothing to do.
                 showControls = false
             )
@@ -447,9 +448,9 @@ private fun DrawScreen(
                 }
             }
             // "Opening <name>" pill: the matched gesture's name with
-            // its target's icon, at the top of the pad, in place of the
-            // brand header while the wave sweeps. Kept small and
-            // compact (v1.0.12) so it reads as a chip, not a banner.
+            // its target's icon, at the top of the pad, in place of
+            // the brand header while the wave sweeps. Kept small
+            // and compact so it reads as a chip, not a banner.
             AnimatedVisibility(
                 visible = matched != null,
                 enter = fadeIn() + slideInVertically { -it / 2 },

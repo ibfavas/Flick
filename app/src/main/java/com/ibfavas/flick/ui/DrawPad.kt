@@ -45,54 +45,55 @@ private const val STROKE_TIMEOUT_MS = 900L
 /** How long the "Draw a gesture" hint stays visible before fading away. */
 private const val HINT_VISIBLE_MS = 2000L
 
-/**
- * The live stroke's curve, built incrementally as the finger moves
- * (v1.1.0). Raw touch points arrive in straight segments, which look
- * jagged; the curve is a quadratic Bezier through the midpoint of
- * each pair of samples, so it bends through the points instead of
- * cornering on them. The old code rebuilt the whole curve from every
- * sampled point on each drag event — O(n) per event, O(n squared)
- * per stroke — so long strokes stuttered. Now each new point appends
- * one segment to the path that is already on screen, which is the
- * same geometry for a fraction of the work. A single point becomes a
- * tiny round dot, drawn by the Canvas directly.
+/*
+ * The live stroke's curve, built one segment at a time as
+ * the finger moves. Raw touch points arrive in straight
+ * segments, which look jagged, so the curve is a quadratic
+ * Bezier through the midpoint of each pair of samples. The
+ * old code rebuilt the whole curve from every point on each
+ * drag event, O(n) per event, so long strokes stuttered.
+ * Now each new point appends one segment to the path
+ * already on screen, the same geometry for a fraction of
+ * the work. A single point becomes a tiny round dot.
  *
- * Appending one segment: from the previous raw point, a quadratic
- * through the midpoint of (previous, new), then the new point
- * becomes the previous one. At the end of the stroke a final line to
- * the last point completes the curve.
+ * Appending one segment: from the previous raw point, a
+ * quadratic through the midpoint of (previous, new), then
+ * the new point becomes the previous one. At the end of
+ * the stroke a final line to the last point completes the
+ * curve.
  */
 private fun appendToPath(path: Path, prev: Offset, next: Offset) {
     val mid = Offset((prev.x + next.x) / 2f, (prev.y + next.y) / 2f)
     path.quadraticTo(prev.x, prev.y, mid.x, mid.y)
 }
 
-/**
- * A drawing pad that captures multi-stroke gestures. Draw a stroke, lift,
- * and draw again to add another stroke to the same gesture, just like
- * drawing a circle and then a line to make a Q. When no new stroke starts
- * within [STROKE_TIMEOUT_MS] the gesture finishes and [onGestureFinished]
- * receives all strokes. Done finishes immediately, Clear wipes the pad.
- * Every stroke drawn so far stays visible.
+/*
+ * A drawing pad that captures multi-stroke gestures. Draw a
+ * stroke, lift, and draw again to add another stroke to the
+ * same gesture, just like drawing a circle and then a line
+ * to make a Q. When no new stroke starts within
+ * STROKE_TIMEOUT_MS the gesture finishes and
+ * onGestureFinished receives all strokes. Done finishes
+ * immediately, Clear wipes the pad. Every stroke drawn so
+ * far stays visible.
  *
- * Drawing is smooth (v1.0.11): the raw touch samples, including the
- * MotionEvent historical points between them, are drawn as a quadratic
- * Bezier curve with round caps and joins, so the stroke bends fluidly
- * while the finger moves instead of showing straight segments or
- * jagged corners. Finished strokes keep a cached smoothed [Path];
- * the live stroke's path is extended one segment per new point
- * (v1.1.0), never rebuilt from scratch.
+ * The raw touch samples, including the MotionEvent
+ * historical points between them, are drawn as a quadratic
+ * Bezier curve with round caps and joins, so the stroke
+ * bends fluidly while the finger moves. Finished strokes
+ * keep a cached smoothed Path; the live stroke's path is
+ * extended one segment per new point, never rebuilt from
+ * scratch.
  *
- * The stroke colour and width come from Settings (cyan, 14px by
- * default). The Done/Clear chips are part of the pad's chrome in the
- * app, but the transparent overlay pad hides them ([showControls] =
- * false): there a gesture is recognised automatically when the timer
- * expires, so the buttons have nothing to do.
- *
- * The pad keeps its chrome minimal: a short "Draw a gesture" hint that
- * fades away after a couple of seconds, and small Done/Clear chips that
- * only appear while a stroke is actually on screen. There is no
- * persistent bar explaining multi-stroke; the behaviour is the same.
+ * The stroke colour and width come from Settings (cyan,
+ * 14px by default). The Done/Clear chips are part of the
+ * pad's chrome in the app, but the transparent overlay pad
+ * hides them (showControls = false): there a gesture is
+ * recognised automatically when the timer expires, so the
+ * buttons have nothing to do. The hint is a short "Draw a
+ * gesture" that fades after a couple of seconds, and the
+ * Done/Clear chips only appear while a stroke is actually
+ * on screen.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -102,11 +103,9 @@ fun DrawPad(
     onCleared: () -> Unit = {},
     /** Called once, when the first stroke of a gesture starts. */
     onFirstStroke: () -> Unit = {},
-    /**
-     * Draw a dark outline under the stroke so it stays readable over any
-     * background. Used by the frosted-glass pad, which sits on top of
-     * whatever the user was doing.
-     */
+    // Draw a dark outline under the stroke so it stays readable
+    // over any background. Used by the frosted-glass pad, which
+    // sits on top of whatever the user was doing.
     strokeOutline: Boolean = false,
     /** The stroke colour, from Settings (cyan by default). */
     strokeColor: Color = FlickBrand.StrokeColor,
@@ -197,7 +196,7 @@ fun DrawPad(
                                 change.position
                             // Extend the live path one segment per new
                             // point, instead of rebuilding the whole
-                            // curve (v1.1.0).
+                            // curve.
                             for (point in points) {
                                 val prev = lastRaw ?: point
                                 currentPath?.let { appendToPath(it, prev, point) }

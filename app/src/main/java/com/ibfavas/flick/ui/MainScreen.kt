@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -21,10 +20,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -77,16 +72,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -171,8 +163,8 @@ import kotlinx.coroutines.withContext
 private enum class Screen { LIST, DRAW, RECORD, TEST, SETTINGS }
 
 /**
- * Home-screen categories (v1.0.13): the tabs are back, but there is
- * no "All" tab — the user meant only "All" to go, not the tabs
+ * Home-screen categories: the tabs are back, but there is
+ * no "All" tab, the user meant only "All" to go, not the tabs
  * themselves. Default tab: Apps. Every gesture fits exactly one tab.
  */
 private enum class GestureCategory(val label: String) {
@@ -200,11 +192,10 @@ private enum class GestureCategory(val label: String) {
 }
 
 /**
- * Flick v1.0.8: AMOLED. Pitch black, white text, one bright cyan
- * accent; the wordmark is the header. The home screen is the gesture
- * list plus a floating add button and a settings entry. No bottom
- * navigation. The draw pad is the centerpiece: a full-screen pad for
- * testing gestures, and a large pad on the record screen.
+ * Home screen: the gesture list plus a floating add button
+ * and a settings entry. No bottom navigation. The draw pad
+ * is the centerpiece: a full-screen pad for testing
+ * gestures, and a large pad on the record screen.
  */
 @Composable
 fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean = false) {
@@ -213,23 +204,23 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     // screen replaces the normal screen flow.
     var addingSampleFor by remember { mutableStateOf<Gesture?>(null) }
 
-    // The new-gesture flow is two steps (v1.0.10): DRAW (a dedicated
-    // full-screen "Draw Gesture" screen, like Glyf's) then RECORD (name
-    // + action). The drawn samples and the tab the user came from are
-    // held here so step 2 knows them, and "Add another sample" can go
-    // back to step 1. recordSamples is only non-empty while a draft is
-    // in progress.
+    // The new-gesture flow is two steps: DRAW (a dedicated
+    // full-screen "Draw Gesture" screen) then RECORD (name +
+    // action). The drawn samples and the tab the user came
+    // from are held here so step 2 knows them, and "Add
+    // another sample" can go back to step 1. recordSamples
+    // is only non-empty while a draft is in progress.
     var recordCategory by remember { mutableStateOf<GestureCategory?>(null) }
     var recordSamples by remember {
         mutableStateOf<List<List<List<StrokePoint>>>>(emptyList())
     }
-    // Where back from DRAW goes (v1.0.11): DRAW is entered from RECORD
-    // in two ways, and they must not be confused, or back loops between
-    // the two screens forever. True only when RECORD sent the user to
-    // DRAW to append one more sample ("Add another sample"): back then
-    // returns to RECORD. False in the fresh flow (LIST -> DRAW -> RECORD
-    // and RECORD -> DRAW to redraw): back then leaves the flow for the
-    // home list, abandoning the draft.
+    // Where back from DRAW goes: DRAW is entered from RECORD
+    // in two ways, and they must not be confused, or back
+    // loops between the two screens forever. True only when
+    // RECORD sent the user to DRAW to append one more sample
+    // ("Add another sample"): back then returns to RECORD.
+    // False in the fresh flow: back then leaves the flow for
+    // the home list, abandoning the draft.
     var drawReturnToRecord by remember { mutableStateOf(false) }
 
     fun exitDrawFlow() {
@@ -260,11 +251,11 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
             else -> screen = Screen.LIST
         }
     }
-    // Every screen sits inside a Surface: without one, Text without an
-    // explicit colour falls back to LocalContentColor, which defaults to
-    // black — dark text on the dark background, which is how the
-    // record screen's labels became unreadable in v1.0.6. The Surface
-    // provides the theme's onBackground (white) as the content colour.
+    // Every screen sits inside a Surface: without one, Text
+    // without an explicit colour falls back to LocalContentColor,
+    // which defaults to black, dark text on the dark
+    // background. The Surface provides the theme's
+    // onBackground (white) as the content colour.
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -362,7 +353,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     }
 }
 
-// ---------------------------------------------------------------- list
+// list
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -379,14 +370,14 @@ private fun GestureListScreen(
     var editing by remember { mutableStateOf<Gesture?>(null) }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
     var detail by remember { mutableStateOf<Gesture?>(null) }
-    // Tabs are back (v1.0.13) without an "All" tab. Default: Apps.
+    // Tabs are back without an "All" tab. Default: Apps.
     var category by remember { mutableStateOf(GestureCategory.APPS) }
     val filtered = remember(gestures, category) {
         gestures.filter { category.matches(it) }
     }
-    // Sort (v1.5.0): creation order by default, or name A to Z.
-    // The dao returns name order, so creation order sorts back to
-    // insertion order by id.
+    // Sort: creation order by default, or name A to Z.
+    // The dao returns name order, so creation order sorts back
+    // to insertion order by id.
     val sortOrder by settings.sortOrder.collectAsState(
         initial = SettingsStore.DEFAULT_SORT_ORDER
     )
@@ -438,11 +429,12 @@ private fun GestureListScreen(
                 .padding(horizontal = 20.dp)
                 .padding(top = 12.dp)
         ) {
-            // Home page (v1.0.13): wordmark header with a small
-            // support mug and settings gear, count line, category tabs
-            // (no "All" tab), cards, and the + Add button. The gear is
-            // the discoverable way into Settings; the overlay pad's gear
-            // and the detail sheet's Settings entry still work too.
+            // Home page: wordmark header with a small support
+            // mug and settings gear, count line, category tabs
+            // (no "All" tab), cards, and the + Add button. The
+            // gear is the discoverable way into Settings; the
+            // overlay pad's gear and the detail sheet's Settings
+            // entry still work too.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
                     painter = painterResource(R.drawable.flick_wordmark),
@@ -541,9 +533,9 @@ private fun GestureListScreen(
             }
             Spacer(modifier = Modifier.height(12.dp))
             if (filtered.isEmpty()) {
-                // Per-tab empty state, like Glyf's "No actions yet":
-                // a centred icon, a line saying what is missing, and
-                // the matching Add button. Never a blank screen.
+                // Per-tab empty state: a centred icon, a line
+                // saying what is missing, and the matching Add
+                // button. Never a blank screen.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -677,11 +669,11 @@ private fun GestureListScreen(
         )
     }
 
-    // Gesture detail bottom sheet (v1.0.10): the drawn gesture large on
-    // a card, an action row (edit, enable/disable, delete, test), and
-    // the name + description below. The sheet reads the gesture from
-    // the list flow, so toggling or testing it always sees the latest
-    // state after the dao updates it.
+    // Gesture detail bottom sheet: the drawn gesture large
+    // on a card, an action row (edit, enable/disable, delete,
+    // test), and the name + description below. The sheet reads
+    // the gesture from the list flow, so toggling or testing
+    // it always sees the latest state after the dao updates it.
     detail?.let { shown ->
         val live = gestures.firstOrNull { it.id == shown.id } ?: shown
         ModalBottomSheet(
@@ -721,7 +713,7 @@ private fun GestureListScreen(
 }
 
 /**
- * A category pill for the home screen (v1.4.2): selected is a cyan
+ * A category pill for the home screen: selected is a cyan
  * fill with dark text; unselected is transparent with a cyan outline
  * and cyan text, like the picked design.
  */
@@ -750,13 +742,13 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * A gesture card (v1.4.2, the picked design): a dark rounded card the
- * same height as the 1.3.0 card (72dp glyph + 12dp padding), holding
- * the cyan-outlined gesture thumbnail, the target's icon in a circle,
- * and the name with "· N samples" on the same line (wrapping to a
- * second line when the name is long). Tap opens the detail sheet;
- * long-press still deletes, as before. Disabled gestures are dimmed
- * so their state is obvious at a glance.
+ * A gesture card: a dark rounded card, holding the
+ * cyan-outlined gesture thumbnail, the target's icon in a
+ * circle, and the name with "· N samples" on the same line
+ * (wrapping to a second line when the name is long). Tap
+ * opens the detail sheet; long-press still deletes, as
+ * before. Disabled gestures are dimmed so their state is
+ * obvious at a glance.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -838,15 +830,14 @@ private fun appLabel(packageName: String): String? {
 }
 
 /**
- * The gesture detail bottom sheet (v1.0.10): the drawn gesture large
- * on a card, an action row (edit, enable/disable, delete, test), and
- * the name + description below. Edit opens the edit dialog, the toggle
- * enables/disables the gesture, delete asks for confirmation, and
- * test runs the gesture's action. An "Add sample" button at the
- * bottom (v1.2.2) opens the sample-capture pad for this gesture; it
- * is disabled once the gesture already has 3 samples. Settings lives
- * on the gear at the top right of the home screen, so the sheet no
- * longer links to it.
+ * The gesture detail bottom sheet: the drawn gesture large
+ * on a card, an action row (edit, enable/disable, delete,
+ * test), and the name + description below. Edit opens the
+ * edit dialog, the toggle enables/disables the gesture,
+ * delete asks for confirmation, and test runs the gesture's
+ * action. An "Add sample" button at the bottom opens the
+ * sample-capture pad for this gesture; it is disabled once
+ * the gesture already has 3 samples.
  */
 @Composable
 private fun GestureDetailSheet(
@@ -945,7 +936,7 @@ private fun GestureDetailSheet(
         if (!gesture.enabled) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Disabled — this gesture will not run from the pad.",
+                "Disabled, this gesture will not run from the pad.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -971,7 +962,7 @@ private fun GestureDetailSheet(
 @Composable
 private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     val strokes = remember(template) { Recognizer.strokesFromString(template) }
-    // Glyphs follow the app accent (v1.2.0), read here because the
+    // Glyphs follow the app accent, read here because the
     // Canvas draw scope below is not a composable scope.
     val accent = accentColor()
     Box(
@@ -1018,7 +1009,7 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * An empty sample slot (v1.2.0): a thin dashed-outline box the same
+ * An empty sample slot: a thin dashed-outline box the same
  * size as a filled sample glyph, showing where the next sample goes.
  */
 @Composable
@@ -1065,13 +1056,12 @@ private fun gestureDescription(gesture: Gesture, appLabel: String? = null): Stri
 // The target icons live in ui/TargetIcon.kt (shared with the pad).
 
 /**
- * The gesture name field (v1.2.1): an underline field, no box, no
- * border. Centred text over a single thin grey underline, with a small
- * grey label centred above it. [fieldFraction] is how wide the text
- * field is relative to its parent: the record form centres it at 70%,
- * the (already narrow) edit dialog uses the full width. Replaces the
- * v1.2.0 squircle box, which read as a stretched capsule on a field
- * this wide.
+ * The gesture name field: an underline field, no box, no
+ * border. Centred text over a single thin grey underline,
+ * with a small grey label centred above it. [fieldFraction]
+ * is how wide the text field is relative to its parent:
+ * the record form centres it at 70%, the (already narrow)
+ * edit dialog uses the full width.
  */
 @Composable
 private fun UnderlineNameField(
@@ -1129,7 +1119,7 @@ private fun EditGestureDialog(
     onSave: (String, ActionType, String) -> Unit
 ) {
     var name by remember { mutableStateOf(gesture.name) }
-    // Same auto-fill rule as the record form (v1.2.0): an app pick
+    // Same auto-fill rule as the record form: an app pick
     // fills the name only while it is blank or holds a previous
     // auto-fill, never over a name the user typed.
     var nameAutoFilled by remember { mutableStateOf(false) }
@@ -1194,17 +1184,17 @@ private fun EditGestureDialog(
     )
 }
 
-// ---------------------------------------------------------------- draw gesture
+// draw gesture
 
 /**
- * The dedicated "Draw Gesture" screen (v1.0.10), like Glyf's: a top
- * bar with back, the title and a Done button (disabled until a
- * gesture is drawn), and a large full-screen draw area below. The
- * squiggle + "Draw here" hint shows while the area is empty. Drawing
- * is the same multi-stroke pad as the record screen (900 ms pen-up
- * timer, strokes stay visible). Done returns the drawn gesture
- * appended to the samples already kept, and the caller moves on to
- * the name + action step.
+ * The dedicated "Draw Gesture" screen: a top bar with back,
+ * the title and a Done button (disabled until a gesture is
+ * drawn), and a large full-screen draw area below. The
+ * squiggle + "Draw here" hint shows while the area is empty.
+ * Drawing is the same multi-stroke pad as the record screen
+ * (900 ms pen-up timer, strokes stay visible). Done returns
+ * the drawn gesture appended to the samples already kept,
+ * and the caller moves on to the name + action step.
  */
 @Composable
 private fun DrawGestureScreen(
@@ -1373,7 +1363,7 @@ private fun SquiggleIcon(modifier: Modifier = Modifier) {
     }
 }
 
-// ---------------------------------------------------------------- record
+// record
 
 @Composable
 private fun RecordScreen(
@@ -1386,17 +1376,18 @@ private fun RecordScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit
 ) {
-    // Step 2 of the new-gesture flow (v1.0.10): the gesture is already
-    // drawn on the dedicated Draw Gesture screen, so this screen is
-    // only the name + action step. The drawn samples arrive here and
-    // are shown as a preview; "Add another sample" goes back to the
-    // draw screen, and "Redraw" starts the drawing over. The action
-    // list is locked to the tab the user came from (contextual Add):
-    // Apps offers only apps, Actions only phone actions, Webpages
-    // only links, Flows only flows.
+    // Step 2 of the new-gesture flow: the gesture is already
+    // drawn on the dedicated Draw Gesture screen, so this
+    // screen is only the name + action step. The drawn samples
+    // arrive here and are shown as a preview; "Add another
+    // sample" goes back to the draw screen, and "Redraw"
+    // starts the drawing over. The action list is locked to
+    // the tab the user came from (contextual Add): Apps offers
+    // only apps, Actions only phone actions, Webpages only
+    // links, Flows only flows.
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
-    // True when the name came from an app pick (v1.2.0): a later app
+    // True when the name came from an app pick: a later app
     // pick refills it, but a name the user typed by hand is never
     // overwritten. Editing the field by hand clears the flag.
     var nameAutoFilled by remember { mutableStateOf(false) }
@@ -1430,11 +1421,11 @@ private fun RecordScreen(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
-            // The name field is an underline field (v1.2.1), centred
-            // at 70% width: no box, no border, just centred text over
-            // a thin grey underline, with the label centred above it.
-            // Its text is filled in from the app the user picks, and
-            // stays editable after.
+            // The name field is an underline field, centred at
+            // 70% width: no box, no border, just centred text over
+            // a thin grey underline, with the label centred above
+            // it. Its text is filled in from the app the user
+            // picks, and stays editable after.
             UnderlineNameField(
                 value = name,
                 onValueChange = {
@@ -1453,11 +1444,11 @@ private fun RecordScreen(
                 color = FlickBrand.TextWhite
             )
             Spacer(modifier = Modifier.height(8.dp))
-            // v1.2.0: no big preview box at the top — these three
-            // small boxes ARE the gesture display. Box 1 holds the
-            // first sample; empty slots are dashed placeholders, and
-            // adding a sample fills the next empty box. Max 3, as
-            // before (main template + two extras).
+            // No big preview box at the top: these three small
+            // boxes ARE the gesture display. Box 1 holds the
+            // first sample; empty slots are dashed placeholders,
+            // and adding a sample fills the next empty box. Max 3,
+            // as before (main template + two extras).
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (i in 0 until Gesture.MAX_SAMPLES) {
                     if (i < initialSamples.size) {
@@ -1478,10 +1469,11 @@ private fun RecordScreen(
                 ) {
                     Text("Redraw")
                 }
-                // Extra samples make recognition more accurate: draw
-                // the same gesture again, a little differently if you
-                // like. This goes back to the draw screen, which
-                // appends the new sample to the ones already kept.
+                // Extra samples make recognition more accurate:
+                // draw the same gesture again, a little
+                // differently if you like. This goes back to the
+                // draw screen, which appends the new sample to
+                // the ones already kept.
                 if (initialSamples.size < Gesture.MAX_SAMPLES) {
                     OutlinedButton(
                         onClick = onAddSample,
@@ -1510,8 +1502,8 @@ private fun RecordScreen(
                 action = action,
                 onChange = { action = it },
                 filter = initialCategory,
-                // Picking an app fills the name from the app's label
-                // (v1.2.0), unless the user already typed a name.
+                // Picking an app fills the name from the app's
+                // label, unless the user already typed a name.
                 onAppPicked = { label ->
                     if (name.isBlank() || nameAutoFilled) {
                         name = label
@@ -1551,12 +1543,13 @@ private fun RecordScreen(
     }
 }
 
-// ---------------------------------------------------------------- add sample
+// add sample
 
 /**
- * Record one more sample of an existing gesture (v1.0.8). The new sample
- * is appended to the gesture's extra samples; the recognizer matches
- * against every sample and takes the best score.
+ * Record one more sample of an existing gesture. The new
+ * sample is appended to the gesture's extra samples; the
+ * recognizer matches against every sample and takes the
+ * best score.
  */
 @Composable
 private fun AddSampleScreen(
@@ -1665,7 +1658,7 @@ private fun AddSampleScreen(
     }
 }
 
-// ---------------------------------------------------------------- action picker
+// action picker
 
 private data class ActionSelection(val type: ActionType, val payload: String) {
     fun isValid(): Boolean = when (type) {
@@ -1683,7 +1676,7 @@ private fun ActionPicker(
     onChange: (ActionSelection) -> Unit,
     allowFlow: Boolean = true,
     filter: GestureCategory? = null,
-    // Called with the picked app's label (v1.2.0): the record form
+    // Called with the picked app's label: the record form
     // fills the gesture name from it. Null where no name field
     // exists (flow steps), so picking there changes nothing.
     onAppPicked: ((String) -> Unit)? = null
@@ -1740,9 +1733,9 @@ private fun ActionPicker(
         }
     }
 
-    // Contextual Add (v1.0.13): when the user adds from a tab, only
-    // that tab's category is offered. No filter (edit dialog, flow
-    // steps) means every category, as before.
+    // Contextual Add: when the user adds from a tab, only
+    // that tab's category is offered. No filter (edit dialog,
+    // flow steps) means every category, as before.
     val showApps = filter == null || filter == GestureCategory.APPS
     val showUrls = filter == null || filter == GestureCategory.WEBPAGES
     val showActions = filter == null || filter == GestureCategory.ACTIONS
@@ -1756,7 +1749,7 @@ private fun ActionPicker(
             onClick = { onChange(ActionSelection(ActionType.LAUNCH_APP, action.payload)) }
         )
         if (action.type == ActionType.LAUNCH_APP) {
-            // Centred like the name field (v1.2.1): narrower than
+            // Centred like the name field: narrower than
             // the screen, centred horizontally.
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -2100,12 +2093,12 @@ private fun ActionOption(label: String, selected: Boolean, onClick: () -> Unit) 
 private data class LaunchableApp(val label: String, val packageName: String)
 
 /**
- * The app list, cached for the life of the process. The PackageManager
- * query is slow (hundreds of apps), so it runs once on a background
- * thread and every later opening of the picker is instant. Icons are
- * loaded lazily per visible row, also off the main thread, and cached
- * the same way. v1.0.6 queried and decoded every icon up front on the
- * main thread, which is why opening the picker stalled.
+ * The app list, cached for the life of the process. The
+ * PackageManager query is slow (hundreds of apps), so it
+ * runs once on a background thread and every later opening
+ * of the picker is instant. Icons are loaded lazily per
+ * visible row, also off the main thread, and cached the same
+ * way.
  */
 private object AppListCache {
     var apps: List<LaunchableApp>? = null
@@ -2113,13 +2106,13 @@ private object AppListCache {
 }
 
 /**
- * The "Choose app" picker, in Flick's own design (v1.0.12): a pitch-
- * black sheet with rounded corners, a search field, large icons and
- * the app name only — no package names, which are technical clutter.
- * The v1.0.7 performance work is untouched: the list loads once on
- * Dispatchers.IO into AppListCache, icons load lazily per visible
- * row, and packages are deduped. Used by the New gesture flow and
- * by the flow-step picker.
+ * The "Choose app" picker, in Flick's own design: a pitch-
+ * black sheet with rounded corners, a search field, large
+ * icons and the app name only, no package names, which are
+ * technical clutter. The list loads once on Dispatchers.IO
+ * into AppListCache, icons load lazily per visible row, and
+ * packages are deduped. Used by the New gesture flow and by
+ * the flow-step picker.
  */
 @Composable
 private fun AppPickerDialog(
@@ -2295,7 +2288,7 @@ private fun AppRowIcon(context: Context, packageName: String) {
     }
 }
 
-// ---------------------------------------------------------------- test pad
+// test pad
 
 @Composable
 private fun TestPadScreen(
@@ -2321,10 +2314,11 @@ private fun TestPadScreen(
     var score by remember { mutableStateOf<Int?>(null) }
     var noMatch by remember { mutableStateOf(false) }
 
-    // The gesture library, observed so the prepared templates stay
-    // fresh when gestures are added, edited or deleted. Prepared once
-    // per library change (v1.1.0): normalising every template variant
-    // on every recognition was the pad's main CPU cost.
+    // The gesture library, observed so the prepared templates
+    // stay fresh when gestures are added, edited or deleted.
+    // Prepared once per library change: normalising every
+    // template variant on every recognition was the pad's
+    // main CPU cost.
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val prepared = remember(gestures) {
         Recognizer.prepareTemplates(
@@ -2381,16 +2375,16 @@ private fun TestPadScreen(
                 modifier = Modifier.fillMaxSize().padding(8.dp),
                 onGestureFinished = { raw ->
                     scope.launch {
-                        // Recognition is CPU work: off the main thread
-                        // (v1.1.0), so the pad stays responsive while
+                        // Recognition is CPU work: off the main
+                        // thread, so the pad stays responsive while
                         // it runs.
                         val match = withContext(Dispatchers.Default) {
                             Recognizer.recognizeMultiPrepared(raw, prepared)
                         }
-                        // The match carries its source template, so the
-                        // gesture is found even when two gestures share
-                        // a name; the name lookup is the fallback for
-                        // gestures recorded before v1.1.0.
+                        // The match carries its source template,
+                        // so the gesture is found even when two
+                        // gestures share a name; the name lookup
+                        // is the fallback for older gestures.
                         val gesture = match?.source?.let { templateToGesture[it] }
                             ?: match?.let { m ->
                                 gestures.firstOrNull { it.name == m.template.name }
@@ -2443,15 +2437,14 @@ private fun TestPadScreen(
     }
 }
 
-// ---------------------------------------------------------------- settings
+// settings
 
-// ---------------------------------------------------------------- settings
+// settings
 
 /**
- * Settings, in Flick's own design but with the same depth of features
- * Glyf has: Permissions, Overlay, Triggers and Reliability. Every label
- * is white or light grey on the black background, never dark text
- * on a dark surface.
+ * Settings: Permissions, Overlay, Triggers and Reliability.
+ * Every label is white or light grey on the black
+ * background, never dark text on a dark surface.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -2464,7 +2457,7 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
-    // Live system cross-window blur state (v1.5.1): the phone can
+    // Live system cross-window blur state: the phone can
     // switch blur off at runtime, and then the blur slider does
     // nothing no matter what it is set to. Show the real state
     // under the slider so the user can see whether the phone
@@ -2689,14 +2682,15 @@ private fun SettingsScreen(
                     range = 0f..SettingsStore.MAX_TIMEOUT_S.toFloat(),
                     steps = SettingsStore.MAX_TIMEOUT_S - 1,
                     description = "Seconds the pad waits with no gesture before closing on its own. " +
-                        "Disabled while multi-stroke is on — the overlay stays open once you start drawing.",
+                        "Disabled while multi-stroke is on, the overlay stays open once you start drawing.",
                     onChange = { scope.launch { settings.setOverlayTimeout(it.toInt()) } }
                 )
             }
         }
         item {
-            // Stroke (v1.0.11): width slider and colour presets. The
-            // stroke is 14px cyan unless the user changes it here.
+            // Stroke: width slider and colour presets. The
+            // stroke is 14px cyan unless the user changes it
+            // here.
             SettingsSection(title = "Stroke") {
                 SettingSlider(
                     label = "Stroke width",
@@ -2732,7 +2726,7 @@ private fun SettingsScreen(
             }
         }
         item {
-            // App colour (v1.2.0): the accent used across the app —
+            // App colour: the accent used across the app,
             // buttons, selections, highlights, the Save pill and
             // gesture glyphs. The stroke colour above stays separate.
             SettingsSection(title = "App colour") {
@@ -2762,7 +2756,7 @@ private fun SettingsScreen(
             }
         }
         item {
-            // The test pad moved here (v1.0.11): the home page has no
+            // The test pad moved here: the home page has no
             // "Draw a gesture" button any more, so this is the way in.
             SettingsSection(title = "Test") {
                 Text(
