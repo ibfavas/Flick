@@ -82,6 +82,7 @@ import com.ibfavas.flick.data.GestureDao
 import com.ibfavas.flick.data.SettingsStore
 import com.ibfavas.flick.gesture.Recognizer
 import com.ibfavas.flick.gesture.StrokePoint
+import com.ibfavas.flick.ui.STROKE_TIMEOUT_MS
 import com.ibfavas.flick.ui.ActionIcon
 import com.ibfavas.flick.ui.FlickTheme
 import com.ibfavas.flick.ui.accentColor
@@ -183,7 +184,6 @@ private fun DrawScreen(
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val strictness by settings.strictness.collectAsState(initial = Recognizer.DEFAULT_THRESHOLD)
     val matcher = remember(gestures) { com.ibfavas.flick.gesture.LibraryMatcher(gestures) }
-    val hasMultiStroke = remember(gestures) { gestures.any { g -> g.enabled && g.allTemplates().any { '|' in it } } }
     var phase by remember { mutableStateOf(PadPhase.IDLE) }
     var misses by remember { mutableIntStateOf(0) }
     var closed by remember { mutableStateOf(false) }
@@ -232,16 +232,15 @@ private fun DrawScreen(
             leave(onClose)
         }
     }
-    LaunchedEffect(phase, closed) {
+    LaunchedEffect(phase, closed, paths.size) {
         if (closed) return@LaunchedEffect
         when (phase) {
             PadPhase.CHECKING -> {
-                delay(65)
                 val input = strokes.toList()
+                // A complete short gesture may also be the start of a longer one.
+                delay(if (input.size < matcher.maxStrokeCount) STROKE_TIMEOUT_MS else 65L)
                 val hasEnoughPoints = input.sumOf { it.size } >= 2
                 val gesture = if (!hasEnoughPoints) null else withContext(Dispatchers.Default) { matcher.match(input, strictness)?.first }
-                // Give an unfinished multi-stroke gesture its normal continuation window.
-                if (gesture == null && hasMultiStroke && hasEnoughPoints) delay(835)
                 if (closed || phase != PadPhase.CHECKING) return@LaunchedEffect
                 if (gesture == null) {
                     misses++
@@ -298,10 +297,10 @@ private fun DrawScreen(
                 else -> accent
             }
             // Pointer input stays in one coordinate system through drawing, recognition and feedback.
-            Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(card, hasMultiStroke) {
+            Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(card, matcher.maxStrokeCount) {
                 awaitEachGesture {
                     val down = awaitFirstDown()
-                    if (closed || (phase != PadPhase.IDLE && !(phase == PadPhase.CHECKING && hasMultiStroke))) return@awaitEachGesture
+                    if (closed || (phase != PadPhase.IDLE && !(phase == PadPhase.CHECKING && strokes.size < matcher.maxStrokeCount))) return@awaitEachGesture
                     down.consume()
                     phase = PadPhase.DRAWING
                     val raw = mutableListOf(StrokePoint(down.position.x, down.position.y))

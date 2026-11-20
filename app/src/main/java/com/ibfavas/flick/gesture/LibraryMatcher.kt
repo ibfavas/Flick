@@ -7,6 +7,7 @@ class LibraryMatcher(gestures: List<Gesture>) {
     private val owners = gestures.filter { it.enabled }.flatMap { gesture ->
         gesture.multiTemplates().map { it.copy(name = gesture.id.toString()) to gesture }
     }.toMap()
+    val maxStrokeCount = owners.keys.maxOfOrNull { it.strokes.size } ?: 0
     private val prepared = Recognizer.prepareTemplates(owners.keys.toList())
     private val hasExperience = owners.values.any { it.learnedUses > 0 }
 

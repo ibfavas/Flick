@@ -40,7 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Time with no new stroke after which the gesture is finished automatically. */
-private const val STROKE_TIMEOUT_MS = 900L
+internal const val STROKE_TIMEOUT_MS = 900L
 
 /** How long the "Draw a gesture" hint stays visible before fading away. */
 private const val HINT_VISIBLE_MS = 2000L

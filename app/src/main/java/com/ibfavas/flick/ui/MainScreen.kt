@@ -2413,9 +2413,19 @@ private fun SettingsScreen(
         }
         item(key = "support") {
             Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.support_button), "Buy me a coffee",
-                    Modifier.size(196.dp, 56.dp).clip(RoundedCornerShape(10.dp))
-                        .clickable(role = androidx.compose.ui.semantics.Role.Button) { openSupportPage(context) })
+                OutlinedButton(
+                    onClick = { openSupportPage(context) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .4f)),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Icon(painterResource(R.drawable.ic_mug), null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Buy me a coffee", color = MaterialTheme.colorScheme.onSurface)
+                }
             }
         }
     }
