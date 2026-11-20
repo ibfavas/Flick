@@ -27,6 +27,9 @@ class FlickAccessibilityService : AccessibilityService() {
         @Volatile
         private var instance: FlickAccessibilityService? = null
 
+        private val connected = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val running: kotlinx.coroutines.flow.StateFlow<Boolean> get() = connected
+
         /** True when the user has enabled Flick's accessibility service. */
         fun isEnabled(context: Context): Boolean {
             val manager =
@@ -54,10 +57,14 @@ class FlickAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        connected.value = true
     }
 
     override fun onDestroy() {
-        if (instance === this) instance = null
+        if (instance === this) {
+            instance = null
+            connected.value = false
+        }
         super.onDestroy()
     }
 

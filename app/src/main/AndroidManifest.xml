@@ -24,6 +24,10 @@
     <application
         android:name=".FlickApp"
         android:allowBackup="true"
+        android:backupAgent=".data.GestureBackupAgent"
+        android:fullBackupOnly="true"
+        android:fullBackupContent="@xml/gesture_backup"
+        android:dataExtractionRules="@xml/gesture_extraction"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

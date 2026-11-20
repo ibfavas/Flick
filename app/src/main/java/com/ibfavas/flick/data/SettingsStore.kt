@@ -14,23 +14,20 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "flick_settings")
 
-// App settings stored in DataStore Preferences. The stroke
-// is configurable: stroke width is a slider and the colour
-// is one of a small set of presets, cyan by default.
-// "Auto close on fail" is gone: on the overlay pad a gesture
-// that matches nothing now always closes the pad at once,
-// with no message and no setting for it.
+enum class PadStyle(val label: String) { FULL_SCREEN("Full screen"), CARD("Card") }
+
 class SettingsStore(private val context: Context) {
 
     companion object {
+        private val PAD_STYLE = stringPreferencesKey("pad_style")
         private val OVERLAY_BLUR = intPreferencesKey("overlay_blur_px")
         private val OVERLAY_OPACITY = floatPreferencesKey("overlay_opacity")
         private val OVERLAY_TIMEOUT = intPreferencesKey("overlay_timeout_s")
         private val VIBRATE_ON_RUN = booleanPreferencesKey("vibrate_on_run")
         private val SOUND_ON_RUN = booleanPreferencesKey("sound_on_run")
         private val STROKE_WIDTH = floatPreferencesKey("stroke_width_px")
-        private val STROKE_COLOR = intPreferencesKey("stroke_color_argb")
         private val ACCENT_COLOR = intPreferencesKey("accent_color_argb")
+        private val STRICTNESS = floatPreferencesKey("match_strictness")
         private val SORT_ORDER = stringPreferencesKey("sort_order")
 
         /** Background blur behind the pad, in px (Android 12 and up). */
@@ -59,41 +56,29 @@ class SettingsStore(private val context: Context) {
         const val MIN_STROKE_WIDTH_PX: Float = 4f
         const val MAX_STROKE_WIDTH_PX: Float = 30f
 
-        /** Drawn stroke colour, as an ARGB int. Cyan by default. */
-        const val DEFAULT_STROKE_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
+        const val DEFAULT_ACCENT_COLOR_ARGB: Int = 0xFFC6FF00.toInt()
 
-        /** Stroke colour presets offered in Settings, as ARGB ints. */
-        val STROKE_COLOR_PRESETS: List<Int> = listOf(
-            0xFF00E5FF, 0xFFFFFFFF, 0xFFFFEB3B,
-            0xFF69F0AE, 0xFFFF80AB, 0xFFFFAB40,
-            0xFFC6FF00, 0xFFFF9100, 0xFFFF5252, 0xFF64FFDA
-        ).map { it.toInt() }
-
-        // App accent colour: the colour of buttons, selections,
-        // highlights, the Save pill and gesture glyphs, app-wide.
-        // Cyan by default. Every preset is light enough for black
-        // text on top. Separate from the stroke colour above,
-        // which colours only the stroke you draw.
-        const val DEFAULT_ACCENT_COLOR_ARGB: Int = -0xFF1A01 // 0xFF00E5FF as a signed int
-
-        /** Accent colour presets offered in Settings, as ARGB ints. */
-        val ACCENT_COLOR_PRESETS: List<Int> = listOf(
-            0xFF00E5FF, // Cyan
-            0xFF69F0AE, // Green
-            0xFFFFAB40, // Amber
-            0xFFB388FF, // Purple
-            0xFFFF80AB, // Pink
-            0xFF448AFF, // Blue
-            0xFFC6FF00, // Lime
-            0xFFFF9100, // Orange
-            0xFFFF5252, // Red
-            0xFF64FFDA  // Teal
-        ).map { it.toInt() }
+        val accentPresets = linkedMapOf(
+            DEFAULT_ACCENT_COLOR_ARGB to "Lime",
+            0xFF35C78D.toInt() to "Emerald",
+            0xFF00E5FF.toInt() to "Cyan",
+            0xFF5486E8.toInt() to "Sapphire",
+            0xFFBB92F2.toInt() to "Amethyst",
+            0xFFE35A78.toInt() to "Ruby",
+            0xFFD78D58.toInt() to "Copper",
+            0xFFE8CD99.toInt() to "Champagne Gold"
+        )
 
         /** Gesture list sort order: creation order or name A to Z. */
         const val SORT_CREATED: String = "created"
+        const val SORT_USED = "most_used"
         const val SORT_AZ: String = "az"
         const val DEFAULT_SORT_ORDER: String = SORT_CREATED
+    }
+
+    val padStyle = context.dataStore.data.map { if (it[PAD_STYLE] == PadStyle.CARD.name) PadStyle.CARD else PadStyle.FULL_SCREEN }
+    suspend fun setPadStyle(style: PadStyle) {
+        context.dataStore.edit { it[PAD_STYLE] = style.name }
     }
 
     val overlayBlur: Flow<Int> = context.dataStore.data.map { it[OVERLAY_BLUR] ?: DEFAULT_BLUR_PX }
@@ -102,8 +87,13 @@ class SettingsStore(private val context: Context) {
     val vibrateOnRun: Flow<Boolean> = context.dataStore.data.map { it[VIBRATE_ON_RUN] ?: DEFAULT_VIBRATE_ON_RUN }
     val soundOnRun: Flow<Boolean> = context.dataStore.data.map { it[SOUND_ON_RUN] ?: DEFAULT_SOUND_ON_RUN }
     val strokeWidth: Flow<Float> = context.dataStore.data.map { it[STROKE_WIDTH] ?: DEFAULT_STROKE_WIDTH_PX }
-    val strokeColor: Flow<Int> = context.dataStore.data.map { it[STROKE_COLOR] ?: DEFAULT_STROKE_COLOR_ARGB }
     val accentColor: Flow<Int> = context.dataStore.data.map { it[ACCENT_COLOR] ?: DEFAULT_ACCENT_COLOR_ARGB }
+    val strictness = context.dataStore.data.map { it[STRICTNESS] ?: com.ibfavas.flick.gesture.Recognizer.DEFAULT_THRESHOLD }
+
+    suspend fun setStrictness(value: Float) {
+        context.dataStore.edit { it[STRICTNESS] = value.coerceIn(.82f, .92f) }
+    }
+
     val sortOrder: Flow<String> = context.dataStore.data.map { it[SORT_ORDER] ?: DEFAULT_SORT_ORDER }
 
     suspend fun setOverlayBlur(px: Int) {
@@ -132,17 +122,14 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun setStrokeColor(argb: Int) {
-        context.dataStore.edit { it[STROKE_COLOR] = argb }
-    }
-
     suspend fun setAccentColor(argb: Int) {
         context.dataStore.edit { it[ACCENT_COLOR] = argb }
+        com.ibfavas.flick.widget.VisiblePadWidget.refresh(context.applicationContext)
     }
 
     suspend fun setSortOrder(order: String) {
         context.dataStore.edit {
-            it[SORT_ORDER] = if (order == SORT_AZ) SORT_AZ else SORT_CREATED
+            it[SORT_ORDER] = if (order == SORT_AZ || order == SORT_USED) order else SORT_CREATED
         }
     }
 }

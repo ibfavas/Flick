@@ -2,7 +2,6 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_wide_label"
     android:initialLayout="@layout/widget_flick_wide"
-    android:previewImage="@drawable/widget_preview_wide"
     android:previewLayout="@layout/widget_flick_wide"
     android:minWidth="250dp"
     android:minHeight="40dp"

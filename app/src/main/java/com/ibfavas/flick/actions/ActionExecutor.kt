@@ -55,12 +55,13 @@ data class Feedback(val vibrate: Boolean = true, val sound: Boolean = false)
  */
 object ActionExecutor {
 
-    private val flowScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val actionScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    fun execute(context: Context, gesture: Gesture, feedback: Feedback = Feedback()) {
+    fun execute(context: Context, gesture: Gesture, feedback: Feedback = Feedback(), recognized: Boolean = false) {
         if (feedback.vibrate) vibrate(context)
         if (feedback.sound) playTone(context)
-        when (gesture.actionType) {
+        fun record() = com.ibfavas.flick.data.DatabaseProvider.get(context).gestureDao().recordUse(gesture, recognized)
+        val ran = when (gesture.actionType) {
             ActionType.LAUNCH_APP -> launchApp(context, gesture.payload)
             ActionType.OPEN_URL -> openUrl(context, gesture.payload)
             ActionType.FLASHLIGHT_ON -> setTorch(context, true)
@@ -69,57 +70,21 @@ object ActionExecutor {
             ActionType.MEDIA_PLAY_PAUSE -> mediaPlayPause(context)
             ActionType.CALL_CONTACT -> callContact(context, gesture.payload)
             ActionType.LOCK_SCREEN -> lockScreen(context)
-            ActionType.TAKE_SCREENSHOT -> takeScreenshot(context)
+            ActionType.TAKE_SCREENSHOT -> {
+                takeScreenshot(context, ::record)
+                return
+            }
             ActionType.TOGGLE_WIFI -> openWifiPanel(context)
             ActionType.TOGGLE_BLUETOOTH -> openBluetoothPanel(context)
             ActionType.TOGGLE_DND -> toggleDnd(context)
-            ActionType.RUN_FLOW -> runFlow(context, FlowCodec.decode(gesture.payload), feedback)
+            ActionType.CHAT_CONTACT -> openChat(context, gesture.payload)
         }
-    }
-
-    /** One step of a flow. Runs immediately, without feedback or delay. */
-    private fun executeStep(context: Context, step: FlowStep) {
-        when (step.type) {
-            ActionType.LAUNCH_APP -> launchApp(context, step.payload)
-            ActionType.OPEN_URL -> openUrl(context, step.payload)
-            ActionType.FLASHLIGHT_ON -> setTorch(context, true)
-            ActionType.FLASHLIGHT_OFF -> setTorch(context, false)
-            ActionType.OPEN_CAMERA -> openCamera(context)
-            ActionType.MEDIA_PLAY_PAUSE -> mediaPlayPause(context)
-            ActionType.CALL_CONTACT -> callContact(context, step.payload)
-            ActionType.LOCK_SCREEN -> lockScreen(context)
-            ActionType.TAKE_SCREENSHOT -> takeScreenshot(context)
-            ActionType.TOGGLE_WIFI -> openWifiPanel(context)
-            ActionType.TOGGLE_BLUETOOTH -> openBluetoothPanel(context)
-            ActionType.TOGGLE_DND -> toggleDnd(context)
-            ActionType.RUN_FLOW -> {
-                // Flows never contain flows (enforced at edit time and
-                // by FlowCodec); a nested one is skipped, not run.
-            }
-        }
-    }
-
-    /** A flow runs its steps in order, with a short pause between them. */
-    private fun runFlow(context: Context, steps: List<FlowStep>, feedback: Feedback) {
-        if (steps.isEmpty()) {
-            Toast.makeText(context, "This flow has no steps", Toast.LENGTH_SHORT).show()
-            return
-        }
-        flowScope.launch {
-            for ((index, step) in steps.withIndex()) {
-                if (index > 0) delay(600)
-                // One failing step must not kill the rest of the
-                // flow: a step whose app is uninstalled, or whose
-                // permission was revoked, is skipped and the flow
-                // carries on with the next step.
-                runCatching { executeStep(context, step) }
-            }
-        }
+        if (ran) record()
     }
 
     fun describe(gesture: Gesture): String = describeAction(gesture.actionType, gesture.payload)
 
-    /** Human-readable label for one action, used for gestures and flow steps alike. */
+    /** Human-readable label for a saved action. */
     fun describeAction(type: ActionType, payload: String): String = when (type) {
         ActionType.LAUNCH_APP -> "Launch app: $payload"
         ActionType.OPEN_URL -> "Open link: $payload"
@@ -133,82 +98,109 @@ object ActionExecutor {
         ActionType.TOGGLE_WIFI -> "Open Wi-Fi settings"
         ActionType.TOGGLE_BLUETOOTH -> "Open Bluetooth settings"
         ActionType.TOGGLE_DND -> "Toggle Do Not Disturb"
-        ActionType.RUN_FLOW -> {
-            val steps = FlowCodec.decode(payload)
-            "Flow: ${steps.size} step${if (steps.size == 1) "" else "s"}"
-        }
+        ActionType.CHAT_CONTACT -> "Chat with ${contactName(payload)}"
     }
 
     /** Payload for CALL_CONTACT is "Name\nNumber". */
     fun contactName(payload: String): String = payload.substringBefore('\n').ifBlank { payload }
 
-    fun contactNumber(payload: String): String = payload.substringAfter('\n', "")
+    fun contactNumber(payload: String): String = payload.substringAfter('\n', "").substringBefore('\n')
 
-    private fun launchApp(context: Context, packageName: String) {
+    private fun launchApp(context: Context, packageName: String): Boolean {
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
         if (intent == null) {
             Toast.makeText(context, "App not installed: $packageName", Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        return runCatching { context.startActivity(intent) }.isSuccess
     }
 
-    private fun openUrl(context: Context, url: String) {
+    private fun openUrl(context: Context, url: String): Boolean {
         val fixed = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fixed))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
+        return try {
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot open link", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun setTorch(context: Context, on: Boolean) {
-        try {
+    private fun setTorch(context: Context, on: Boolean): Boolean {
+        return try {
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val cameraId = cameraManager.cameraIdList.firstOrNull() ?: run {
                 Toast.makeText(context, "No camera found", Toast.LENGTH_SHORT).show()
-                return
+                return false
             }
             cameraManager.setTorchMode(cameraId, on)
+            true
         } catch (e: Exception) {
             Toast.makeText(
                 context,
                 "Flashlight needs camera permission",
                 Toast.LENGTH_SHORT
             ).show()
+            false
         }
     }
 
-    private fun openCamera(context: Context) {
+    private fun openCamera(context: Context): Boolean {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
+        return try {
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot open camera", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun mediaPlayPause(context: Context) {
-        try {
+    private fun mediaPlayPause(context: Context): Boolean {
+        return try {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             audioManager.dispatchMediaKeyEvent(down)
             audioManager.dispatchMediaKeyEvent(up)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot control media", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun callContact(context: Context, payload: String) {
+    private fun openChat(context: Context, payload: String): Boolean {
+        val phone = contactNumber(payload)
+        val region = java.util.Locale.getDefault().country
+        val normalized = android.telephony.PhoneNumberUtils.formatNumberToE164(phone, region)
+        if (normalized == null) {
+            Toast.makeText(context, "Save the contact with its country code to open WhatsApp", Toast.LENGTH_LONG).show()
+            return false
+        }
+        val uri = Uri.parse("https://wa.me/" + normalized.removePrefix("+"))
+        for (app in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(app).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(intent)
+                return true
+            } catch (_: android.content.ActivityNotFoundException) {
+                // Try the other installed WhatsApp edition.
+            }
+        }
+        Toast.makeText(context, "Install WhatsApp to open this chat", Toast.LENGTH_LONG).show()
+        return false
+    }
+
+    private fun callContact(context: Context, payload: String): Boolean {
         val number = contactNumber(payload)
         if (number.isBlank()) {
             Toast.makeText(context, "No phone number saved for this contact", Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) !=
             PackageManager.PERMISSION_GRANTED
@@ -223,34 +215,38 @@ object ActionExecutor {
             } catch (e: Exception) {
                 // The toast already told the user what is missing.
             }
-            return
+            return false
         }
-        val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")).apply {
+        val intent = Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        try {
+        return try {
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot place the call", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun lockScreen(context: Context) {
+    private fun lockScreen(context: Context): Boolean {
         if (!FlickAccessibilityService.performAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)) {
             guideToAccessibility(context, "lock the screen")
+            return false
         }
+        return true
     }
 
     /**
      * The pad closes right after a match, so the screenshot waits a
      * moment first, otherwise it would capture the pad itself.
      */
-    private fun takeScreenshot(context: Context) {
-        flowScope.launch {
+    private fun takeScreenshot(context: Context, onSuccess: () -> Unit) {
+        actionScope.launch {
             delay(700)
             if (!FlickAccessibilityService.performAction(AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT)) {
                 guideToAccessibility(context, "take a screenshot")
-            }
+            } else onSuccess()
         }
     }
 
@@ -270,7 +266,7 @@ object ActionExecutor {
         }
     }
 
-    private fun openWifiPanel(context: Context) {
+    private fun openWifiPanel(context: Context): Boolean {
         // Android 12 and up do not let an app flip Wi-Fi
         // silently, so the honest behaviour is the system
         // panel, where the user flips it.
@@ -279,26 +275,30 @@ object ActionExecutor {
         } else {
             Intent(Settings.ACTION_WIFI_SETTINGS)
         }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
+        return try {
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot open Wi-Fi settings", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun openBluetoothPanel(context: Context) {
+    private fun openBluetoothPanel(context: Context): Boolean {
         // There is no Bluetooth panel action (unlike Wi-Fi), so this
         // opens Bluetooth settings, where the user flips the switch.
         val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
+        return try {
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot open Bluetooth settings", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun toggleDnd(context: Context) {
+    private fun toggleDnd(context: Context): Boolean {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!notificationManager.isNotificationPolicyAccessGranted) {
@@ -315,9 +315,9 @@ object ActionExecutor {
             } catch (e: Exception) {
                 // The toast already told the user what to do.
             }
-            return
+            return false
         }
-        try {
+        return try {
             val on = notificationManager.currentInterruptionFilter !=
                 NotificationManager.INTERRUPTION_FILTER_ALL
             notificationManager.setInterruptionFilter(
@@ -329,8 +329,10 @@ object ActionExecutor {
                 if (on) "Do Not Disturb off" else "Do Not Disturb on",
                 Toast.LENGTH_SHORT
             ).show()
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Cannot change Do Not Disturb", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
@@ -350,7 +352,7 @@ object ActionExecutor {
         vibrate(context)
     }
 
-    private fun vibrate(context: Context) {
+    fun vibrate(context: Context, success: Boolean = true) {
         try {
             val managerVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 try {
@@ -370,17 +372,9 @@ object ActionExecutor {
                     Log.w("Flick", "No working vibrator on this device")
                     return
                 }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Log.d(
-                    "Flick",
-                    "Vibrating: hasAmplitudeControl=${vibrator.hasAmplitudeControl()}"
-                )
-                vibrator.vibrate(VibrationEffect.createOneShot(80, 255))
-            } else {
-                Log.d("Flick", "Vibrating with legacy 80 ms buzz")
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(80)
-            }
+            val effect = if (success) VibrationEffect.createOneShot(80, 255)
+                else VibrationEffect.createWaveform(longArrayOf(0, 35, 55, 35), -1)
+            vibrator.vibrate(effect)
         } catch (e: Exception) {
             // Vibration must never break running the action.
             Log.w("Flick", "Vibration failed", e)

@@ -1,140 +1,42 @@
-<p align="center">
-  <img src="assets/banner.png" alt="Flick" width="720">
-</p>
+# Flick
 
-<p align="center">
-  <b>✨ Draw a gesture. Launch anything. 🚀</b><br>
-  Flick is a fully local Android app: no backend, no accounts,
-  no data leaves your phone. 🔒
-</p>
+Draw a gesture to open an app, visit a webpage, call someone or run a phone action. Flick recognises gestures on your device. It runs on Android 8.0 and later.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.2-00E5FF" alt="Version 1.5.2">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-00E5FF" alt="License: Apache 2.0">
-  <img src="https://img.shields.io/badge/platform-Android-3DDC84" alt="Platform: Android">
-  <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF" alt="Kotlin 2.0">
-</p>
+[![Download Flick for Android](assets/download-button.svg)](https://github.com/ibfavas/Flick/releases/latest/download/flick.apk)
 
-## ⬇️ Download
+**Version 2.0.0** · [Release notes and previous APKs](https://github.com/ibfavas/Flick/releases)
 
-<p align="center">
-  <a href="https://github.com/ibfavas/Flick/releases/download/v1.5.2/flick-1.5.2.apk">
-    <img src="assets/download-button.png" alt="Download Flick for Android" width="340">
-  </a>
-</p>
+## Your first gesture
 
-<p align="center">
-  Tap it, install the APK and you are in. No account, no sign up,
-  nothing phoning home. 📲
-</p>
+1. On Home, choose **Apps**, **Actions**, **Webpages** or **People**, then tap **+**.
+2. Draw a gesture, name it and choose its target. You can record up to three samples. If the shape resembles another gesture, Flick lets you redraw it or keep it.
+3. Add a Flick widget or the Quick Settings tile. Tap it to open the pad, then draw. When Flick recognises the gesture, the target’s icon and name appear at the top before it opens.
 
-<p align="center">
-  📦 <a href="https://github.com/ibfavas/Flick/releases">All releases</a>
-</p>
+## What’s new in 2.0
 
-## 🎉 What is new in 1.5.2
+- **Home and Gestures.** Home shows library and activity counts. Each gesture row shows the shape, target and sample count. The Bind gesture screen shows all three sample slots above the redraw and add-sample controls. Tap an empty slot to record another example. Tap play on a library row to test it. Long-press the row or open its menu to edit, test, duplicate or delete. Use **Undo** to recover a deletion.
+- **Stats and History.** See how often each gesture runs, sort by **Most used**, or check recent launches and their times.
+- **People.** Bind a gesture to a specific contact. Use their contact photo or choose your own. New call gestures live in People. Existing WhatsApp bindings remain available under Actions. Flows have been removed.
+- **Drawing pads.** In **Settings → Overlay**, turn on **Drawing pad style** for a floating card or turn it off for full screen. Both pads use rounded corner guides and a faint dotted centre that disappear on touch. The stroke is a clean line in your accent colour. A match shows “Launching” and the target name while an accent-coloured wave sweeps up the pad for 650 ms. A miss flashes red and clears for a retry. A second miss closes the pad. Success and failure have distinct haptics when feedback is enabled.
+- **Recognition.** A strictness slider controls how closely a drawing must match. Successful uses give familiar gestures a small allowance on near misses. The two-pass matcher and its bounded DTW rescue still handle single- and multi-stroke drawings.
+- **Appearance and controls.** Flick uses a dark theme, a lime default accent and a new launcher icon. The accent colours the controls, gesture previews, pad and wordmark dot. Choose Lime, Emerald, Cyan, Sapphire, Amethyst, Ruby, Copper or Champagne Gold. Your selection applies to recording, testing and launching gestures. Settings groups permissions, overlay controls, general preferences and widgets. Adjust background blur, opacity, idle timeout and stroke width in Overlay. The support link is on Home and below the Widgets section in Settings.
+- **Widgets.** Choose the round 1×1 shortcut, the invisible 2×1 tap area or the wide 3×1 widget. On the wide widget, **Draw a gesture** opens the pad and the expand button opens Flick.
+- **Backups.** Enable **Auto backup** to include the library in Android backup and restore. For a portable copy, export JSON from Settings. Import restores gesture targets, contact thumbnails, samples and enabled states. It skips duplicate names and reports invalid entries.
 
-🔧 Code optimisation and fine tuning under the hood. Two unused
-pieces removed, unused imports cleaned up, and comments tidied.
-Nothing about how the app works has changed.
+## Phone actions
 
-## 🎉 What is new in 1.5.1
+Gestures can control the flashlight or media playback, open the camera, lock the screen, take a screenshot, open Wi-Fi or Bluetooth settings, or toggle Do Not Disturb. Some actions need additional Android permissions. The Permissions section shows which ones are enabled.
 
-🔧 A fix release for two things that still did not work on some phones.
-Vibrate on run now logs what goes wrong and falls back to the older
-vibrator if the new one fails, and Settings has a Test vibration button
-so you can check the buzz right away. The background blur on the drawing
-pad is re-applied every time the pad opens, and Settings now shows
-whether the phone itself has blur switched on or off.
+## Build
 
-## 🎉 What is new in 1.5.0
+Use JDK 17 and Android SDK platform 35 with Build Tools 35.0.0. For a Gradle debug build, run `./gradlew assembleDebug`. Gradle release signing accepts the project properties `flickStoreFile`, `flickStorePassword`, `flickKeyAlias` and `flickKeyPassword`.
 
-☕ The old white coffee mug is back at the top of the home screen.
-Gesture rows sit a little closer together now. Vibrate and sound when
-a gesture runs are fixed: a stronger buzz and the phone's notification
-sound, so they actually play. A new Widgets section in Settings shows
-all three widgets, with a button to add each one to the home screen.
-Stroke width now goes up to 30px. Four new colours for the stroke and
-the app: lime, orange, red and teal. The background blur on the drawing
-pad now handles phones where the system has blur switched off, falling
-back to a stronger tint so the pad stays readable. The gesture list can
-be sorted by creation order or by name, A to Z. Plus bug fixes.
-
-## ✨ Features
-
-- **🎨 Gesture pad:** draw a gesture on a full screen canvas. Flick
-  recognises it with a matcher written from scratch (a multi-stroke $N
-  recognizer blended with banded DTW, direction handling, and a rescue
-  pass for draws cut short). Sloppy, tilted, and reversed strokes still
-  match, and near misses do not launch the wrong thing. Draw a circle,
-  lift, and draw a line to make a Q ✍️. Multi-stroke gestures work, and
-  single-stroke gestures work exactly as before. No ML model, no
-  dependency.
-- **📚 Gesture library:** record gestures, give them names, attach
-  actions, edit, delete, enable or disable, and test them from the draw
-  pad. Up to 3 samples per gesture, with a confidence readout while
-  testing. Add extra samples straight from the gesture sheet. Everything
-  is stored locally in a SQLite database on the phone 💾. Backup and
-  restore your gestures as JSON.
-- **⚡ Actions:** launch an app, open a URL or deep link, call a
-  contact 📞, lock the screen, take a screenshot, toggle flashlight,
-  open the camera, play or pause media, open Wi-Fi or Bluetooth settings,
-  and toggle Do Not Disturb.
-- **🔗 Flows:** chain several actions into one gesture ⛓️, run step by step.
-- **👻 Invisible widget:** a fully transparent home screen widget. Tap
-  it and a transparent gesture pad opens. Draw, and the matched action
-  runs. Round and wide widget styles are available too.
-- **⚙️ Quick Settings tile:** the Flick tile opens the same gesture pad
-  from anywhere 📲.
-- **🎨 Themes:** 🌑 AMOLED black theme with your choice of accent colour
-  🌈: Cyan, Green, Amber, Purple, Pink, or Blue. Stroke colour and width
-  are adjustable too.
-
-## 👻 How the invisible widget works
-
-Android widgets only support taps, not stroke tracking: a widget cannot
-receive finger movement data. So the widget itself is just a transparent
-tap target. Tapping it launches a transparent full screen activity, and
-the drawing happens there. In daily use it feels like drawing on the home
-screen, but the drawing technically happens in that transparent activity,
-not inside the widget.
-
-## 🛠️ Build
-
-Requirements: JDK 17 and the Android SDK (platform-tools,
-`platforms;android-35`, `build-tools;35.0.0`).
+The release APK can also be built with [the manual build script](tools/build-manual.sh). It uses Kotlin CLI 2.0.21, the matching Compose compiler plugin, aapt2, d8 and apksigner. With the toolchain, resolved dependencies and signing configuration in place, run:
 
 ```sh
-export ANDROID_HOME=$HOME/android-sdk
-./gradlew assembleDebug
+tools/build-manual.sh
 ```
 
-For a signed release build, pass the keystore details as Gradle
-properties (never commit them):
+The signed APK is written to `build/flick-release.apk`. Package `com.ibfavas.flick`, version code 26, minimum SDK 26, target SDK 35.
 
-```sh
-./gradlew assembleRelease \
-  -PflickStoreFile=$HOME/.config/flick/flick-release.keystore \
-  -PflickStorePassword=... \
-  -PflickKeyAlias=flick \
-  -PflickKeyPassword=...
-```
-
-A daemon-free manual build is also available via
-`tools/build-manual.sh` (kotlinc CLI + aapt2 + d8 + apksigner), which
-produces a signed release APK at `build/flick-release.apk`.
-
-## 💬 Feedback
-
-Found a bug or have an idea? Open an issue on GitHub, I read them all. 🙌
-
-## 🎨 Originality
-
-Flick is 100% original code written for this project. It shares a concept
-with other gesture launchers (draw to launch) but copies no code, assets,
-branding, or resources from any other app.
-
-## 📄 License
-
-Flick is licensed under the Apache License 2.0. See [LICENSE](LICENSE)
-for the full text.
+[Report an issue](https://github.com/ibfavas/Flick/issues) · [Apache License 2.0](LICENSE)

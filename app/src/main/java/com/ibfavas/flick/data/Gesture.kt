@@ -31,11 +31,7 @@ enum class ActionType {
     TOGGLE_BLUETOOTH,
     /** Flip Do Not Disturb, needs notification-policy access. */
     TOGGLE_DND,
-    // Run a flow: several actions in order. Payload is a JSON
-    // array of steps, encoded by FlowCodec, each step
-    // {"type": "...", "payload": "..."}. Steps are leaf actions
-    // only, a flow never contains another flow.
-    RUN_FLOW
+    CHAT_CONTACT
 }
 
 /** One saved gesture: a name, a normalized template, and the action it runs. */
@@ -63,7 +59,9 @@ data class Gesture(
     // Whether the gesture runs from the pad. Disabled gestures
     // stay in the list, dimmed, but never match or run. Toggled
     // from the gesture detail sheet.
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val useCount: Long = 0,
+    val learnedUses: Long = 0
 ) {
     /** All recorded samples of this gesture, first sample first. */
     fun allTemplates(): List<String> =
@@ -105,19 +103,18 @@ data class Gesture(
     }
 }
 
-// Gesture library backed by plain SQLite
-// (SQLiteOpenHelper). Room was the plan, but its annotation
-// processing needs Gradle/KSP and Gradle cannot run in the
-// build sandbox (its daemon needs loopback TCP, which the
-// sandbox blocks). Same behaviour: a local "gestures" table
-// with the same columns, full CRUD, and a Flow of all
-// gestures ordered by name.
 class GestureDao(context: Context) {
 
     private val helper = object : SQLiteOpenHelper(
-        context.applicationContext, "flick.db", null, 3
+        context.applicationContext, "flick.db", null, 4
     ) {
+        fun createHistory(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE usage (gestureId INTEGER NOT NULL, name TEXT NOT NULL, time INTEGER NOT NULL, recognized INTEGER NOT NULL)")
+            db.execSQL("CREATE INDEX usage_gesture ON usage(gestureId)")
+        }
+
         override fun onCreate(db: SQLiteDatabase) {
+            createHistory(db)
             db.execSQL(
                 "CREATE TABLE gestures (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -131,6 +128,7 @@ class GestureDao(context: Context) {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 4) createHistory(db)
             // v2: extra recorded samples per gesture.
             if (oldVersion < 2) {
                 db.execSQL(
@@ -149,6 +147,23 @@ class GestureDao(context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _all = MutableStateFlow<List<Gesture>>(emptyList())
 
+    data class Use(val name: String, val time: Long)
+
+    private val _history = MutableStateFlow<List<Use>>(emptyList())
+    val history: Flow<List<Use>> get() = _history
+
+    fun recordUse(gesture: Gesture, recognized: Boolean) {
+        scope.launch {
+            helper.writableDatabase.insertOrThrow("usage", null, ContentValues().apply {
+                put("gestureId", gesture.id)
+                put("name", gesture.name)
+                put("time", System.currentTimeMillis())
+                put("recognized", if (recognized) 1 else 0)
+            })
+            refresh()
+        }
+    }
+
     init {
         refresh()
     }
@@ -166,11 +181,53 @@ class GestureDao(context: Context) {
         id
     }
 
+    suspend fun importBackup(text: String): Backup.ImportResult = withContext(Dispatchers.IO) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        val result = try {
+            val names = readAll(db).mapTo(mutableSetOf()) { it.name }
+            val (gestures, report) = Backup.parse(text, names)
+            for (gesture in gestures) db.insertOrThrow("gestures", null, gesture.toValues())
+            db.setTransactionSuccessful()
+            report
+        } finally {
+            db.endTransaction()
+        }
+        if (result.imported > 0) refresh()
+        result
+    }
+
     suspend fun update(gesture: Gesture) = withContext(Dispatchers.IO) {
         helper.writableDatabase.update(
             "gestures", gesture.toValues(), "id = ?",
             arrayOf(gesture.id.toString())
         )
+        refresh()
+    }
+
+    suspend fun duplicate(gesture: Gesture) = withContext(Dispatchers.IO) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val name = Gesture.uniqueName(gesture.name, readAll(db))
+            db.insertOrThrow("gestures", null, gesture.copy(name = name).toValues())
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        refresh()
+    }
+
+    suspend fun restore(gesture: Gesture) = withContext(Dispatchers.IO) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val name = Gesture.uniqueName(gesture.name, readAll(db))
+            db.insertOrThrow("gestures", null, gesture.copy(name = name).toValues().apply { put("id", gesture.id) })
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
         refresh()
     }
 
@@ -183,12 +240,20 @@ class GestureDao(context: Context) {
 
     private fun refresh() {
         scope.launch {
-            _all.value = readAll(helper.readableDatabase)
+            synchronized(helper) {
+                val db = helper.readableDatabase
+                _all.value = readAll(db)
+                _history.value = db.rawQuery("SELECT name,time FROM usage ORDER BY time DESC,rowid DESC LIMIT 100", null).use { rows ->
+                    buildList { while (rows.moveToNext()) add(Use(rows.getString(0), rows.getLong(1))) }
+                }
+            }
         }
     }
 
     private fun readAll(db: SQLiteDatabase): List<Gesture> {
-        db.query("gestures", null, null, null, null, null, "name ASC").use { cursor ->
+        db.rawQuery("""SELECT g.*, COUNT(u.gestureId) AS useCount, COALESCE(SUM(u.recognized),0) AS learnedUses
+            FROM gestures g LEFT JOIN usage u ON g.id=u.gestureId
+            WHERE g.actionType != 'RUN_FLOW' GROUP BY g.id ORDER BY g.name""", null).use { cursor ->
             val out = ArrayList<Gesture>()
             while (cursor.moveToNext()) out.add(rowToGesture(cursor))
             return out
@@ -205,6 +270,8 @@ class GestureDao(context: Context) {
             actionType = ActionType.valueOf(
                 cursor.getString(cursor.getColumnIndexOrThrow("actionType"))
             ),
+            useCount = cursor.getLong(cursor.getColumnIndexOrThrow("useCount")),
+            learnedUses = cursor.getLong(cursor.getColumnIndexOrThrow("learnedUses")),
             payload = cursor.getString(cursor.getColumnIndexOrThrow("payload")),
             extraTemplates = if (extraIdx >= 0 && !cursor.isNull(extraIdx)) {
                 cursor.getString(extraIdx)

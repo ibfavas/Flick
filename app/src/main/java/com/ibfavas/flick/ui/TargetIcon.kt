@@ -57,7 +57,7 @@ fun iconFor(type: ActionType): ImageVector = when (type) {
     ActionType.TOGGLE_WIFI -> Icons.Filled.Settings
     ActionType.TOGGLE_BLUETOOTH -> Icons.Filled.Settings
     ActionType.TOGGLE_DND -> Icons.Filled.Notifications
-    ActionType.RUN_FLOW -> Icons.AutoMirrored.Filled.List
+    ActionType.CHAT_CONTACT -> Icons.Filled.Face
 }
 
 /**
@@ -91,6 +91,8 @@ fun ActionIcon(gesture: Gesture, size: Dp = 44.dp, iconSize: Dp = 24.dp, circula
         } else {
             FallbackIcon(Icons.AutoMirrored.Filled.ExitToApp, size, iconSize)
         }
+    } else if (gesture.actionType == ActionType.CALL_CONTACT || gesture.actionType == ActionType.CHAT_CONTACT) {
+        ContactIcon(gesture.actionType, gesture.payload, size, iconSize)
     } else {
         FallbackIcon(iconFor(gesture.actionType), size, iconSize)
     }
@@ -112,4 +114,11 @@ fun FallbackIcon(icon: ImageVector, size: Dp = 44.dp, iconSize: Dp = 24.dp) {
             modifier = Modifier.size(iconSize)
         )
     }
+}
+
+@Composable
+internal fun ContactIcon(type: ActionType, payload: String, size: Dp, iconSize: Dp = 24.dp) {
+    val photo = remember(payload) { com.ibfavas.flick.data.ContactPhoto.decode(payload)?.asImageBitmap() }
+    if (photo != null) Image(photo, null, Modifier.size(size).clip(CircleShape))
+    else FallbackIcon(iconFor(type), size, iconSize)
 }

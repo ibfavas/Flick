@@ -103,7 +103,8 @@ object Backup {
                         template = template,
                         actionType = type,
                         payload = obj.optString("payload", ""),
-                        extraTemplates = obj.optString("extraTemplates", ""),
+                        extraTemplates = obj.optString("extraTemplates", "").lineSequence()
+                            .filter { it.isNotBlank() }.take(Gesture.MAX_SAMPLES - 1).joinToString("\n"),
                         enabled = obj.optBoolean("enabled", true)
                     )
                 )

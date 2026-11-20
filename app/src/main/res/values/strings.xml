@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Flick</string>
+    <string name="open_pad">Open Flick gesture pad</string>
     <string name="tile_label">Flick</string>
     <string name="widget_round_label">Flick (Round)</string>
     <string name="widget_wide_label">Flick (Wide)</string>
     <string name="widget_invisible_label">Flick (Invisible)</string>
     <string name="accessibility_service_description">Lets Flick lock the screen and take screenshots when you run those gesture actions. Flick does not read your screen or watch what you do.</string>
+    <string name="widget_draw_label">Draw a gesture</string>
+    <string name="widget_open_app">Open Flick app</string>
 </resources>

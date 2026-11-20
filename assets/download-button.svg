@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="302" height="72" viewBox="0 0 302 72" role="img" aria-labelledby="title">
+  <title id="title">Download Flick for Android</title>
+  <rect x="1" y="1" width="300" height="70" rx="21" fill="#121510" stroke="#879a47"/>
+  <rect x="12" y="12" width="48" height="48" rx="14" fill="#c6ff00"/>
+  <g fill="none" stroke="#121510" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 23v18m-7-7 7 7 7-7m-18 7v5h22v-5"/>
+  </g>
+  <g font-family="system-ui, sans-serif">
+    <text x="75" y="35" font-size="21" font-weight="700" fill="#fff">Download Flick</text>
+    <text x="76" y="54" font-size="12" fill="#c7cbbf">Android 8.0+ · Signed APK</text>
+  </g>
+  <path d="m268 30 6 6-6 6" stroke="#c6ff00" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

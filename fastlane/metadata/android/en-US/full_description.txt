@@ -1,11 +1,9 @@
-Flick is a fully local Android gesture launcher. Draw a gesture to launch apps, open links, or run phone actions. No backend, no accounts, no data leaves your phone.
+Draw a gesture to open an app, visit a webpage, call a contact or run a phone action. Flick recognises gestures on your device.
 
-Draw on the invisible home screen widget or the Quick Settings tile to open the transparent drawing pad, then draw your gesture and the matched action runs.
+Tap a home screen widget or the Quick Settings tile to open the drawing pad. Choose a full-screen pad or a floating card. A successful match shows the target before it opens. A missed match gives you one retry.
 
-Features:
-- Gesture pad with a matcher written from scratch: a multi-stroke recognizer blended with banded DTW. Sloppy, tilted and reversed strokes still match, and near misses do not launch the wrong thing. No ML model, no network.
-- Gesture library: record gestures, name them, attach actions, edit, delete, enable or disable, and test them. Up to 3 samples per gesture. Everything is stored locally in a SQLite database. Backup and restore as JSON.
-- Actions: launch an app, open a URL, call a contact, lock the screen, take a screenshot, toggle the flashlight, open the camera, play or pause media, open Wi-Fi or Bluetooth settings, toggle Do Not Disturb.
-- Flows: chain several actions into one gesture.
-- Invisible widget: a fully transparent home screen widget in round and wide styles, plus a Quick Settings tile.
-- Themes: AMOLED black with a choice of accent colour, adjustable stroke colour and width.
+Record up to three samples per gesture. Flick warns about similar shapes, learns from successful uses and lets you adjust match strictness. Check usage counts in Stats and recent launches in History. Long-press a gesture to edit, test, duplicate or delete it.
+
+Phone actions include flashlight control, camera, media playback, screen lock, screenshots, Wi-Fi and Bluetooth settings, and Do Not Disturb. Contact-call gestures support custom photos.
+
+One accent colours your strokes, widgets and controls. Choose from eight presets, including Sapphire, Copper and Champagne Gold. Back up your library with Android backup or export and import a JSON file.

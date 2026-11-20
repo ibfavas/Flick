@@ -1,5 +1,6 @@
 package com.ibfavas.flick.ui
 
+import com.ibfavas.flick.data.PadStyle
 import android.Manifest
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -9,9 +10,6 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.view.WindowManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.widget.Toast
@@ -36,6 +34,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +65,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
@@ -100,7 +109,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -125,8 +133,10 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -141,14 +151,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.ibfavas.flick.R
 import com.ibfavas.flick.actions.ActionExecutor
-import java.util.function.Consumer
+import kotlin.math.roundToInt
 import com.ibfavas.flick.actions.Feedback
 import com.ibfavas.flick.actions.FlickAccessibilityService
 import com.ibfavas.flick.widget.FlickRoundWidgetProvider
 import com.ibfavas.flick.widget.FlickWidgetProvider
 import com.ibfavas.flick.widget.FlickWideWidgetProvider
-import com.ibfavas.flick.actions.FlowCodec
-import com.ibfavas.flick.actions.FlowStep
 import com.ibfavas.flick.data.ActionType
 import com.ibfavas.flick.data.Backup
 import com.ibfavas.flick.data.Gesture
@@ -162,24 +170,20 @@ import kotlinx.coroutines.withContext
 
 private enum class Screen { LIST, DRAW, RECORD, TEST, SETTINGS }
 
-/**
- * Home-screen categories: the tabs are back, but there is
- * no "All" tab, the user meant only "All" to go, not the tabs
- * themselves. Default tab: Apps. Every gesture fits exactly one tab.
- */
+
 private enum class GestureCategory(val label: String) {
     APPS("Apps"),
     ACTIONS("Actions"),
     WEBPAGES("Webpages"),
-    FLOWS("Flows");
+    PEOPLE("People");
 
     fun matches(gesture: Gesture): Boolean = when (this) {
         APPS -> gesture.actionType == ActionType.LAUNCH_APP
         WEBPAGES -> gesture.actionType == ActionType.OPEN_URL
-        FLOWS -> gesture.actionType == ActionType.RUN_FLOW
+        PEOPLE -> gesture.actionType == ActionType.CALL_CONTACT
         ACTIONS -> gesture.actionType != ActionType.LAUNCH_APP &&
             gesture.actionType != ActionType.OPEN_URL &&
-            gesture.actionType != ActionType.RUN_FLOW
+            !PEOPLE.matches(gesture)
     }
 
     /** The first action type offered when adding from this tab. */
@@ -187,21 +191,24 @@ private enum class GestureCategory(val label: String) {
         APPS -> ActionType.LAUNCH_APP
         WEBPAGES -> ActionType.OPEN_URL
         ACTIONS -> ActionType.FLASHLIGHT_ON
-        FLOWS -> ActionType.RUN_FLOW
+        PEOPLE -> ActionType.CALL_CONTACT
     }
 }
 
-/**
- * Home screen: the gesture list plus a floating add button
- * and a settings entry. No bottom navigation. The draw pad
- * is the centerpiece: a full-screen pad for testing
- * gestures, and a large pad on the record screen.
- */
+private fun openSupportPage(context: Context) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://buymeacoffee.com/flickapp")))
+    } catch (_: android.content.ActivityNotFoundException) {
+        Toast.makeText(context, "Install a browser to open this page.", Toast.LENGTH_SHORT).show()
+    }
+}
+
 @Composable
 fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean = false) {
     var screen by remember { mutableStateOf(if (openSettings) Screen.SETTINGS else Screen.LIST) }
     // The gesture a sample is being recorded for. While set, the add-sample
     // screen replaces the normal screen flow.
+    val listState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var addingSampleFor by remember { mutableStateOf<Gesture?>(null) }
 
     // The new-gesture flow is two steps: DRAW (a dedicated
@@ -210,6 +217,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     // from are held here so step 2 knows them, and "Add
     // another sample" can go back to step 1. recordSamples
     // is only non-empty while a draft is in progress.
+    val draftState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var recordCategory by remember { mutableStateOf<GestureCategory?>(null) }
     var recordSamples by remember {
         mutableStateOf<List<List<List<StrokePoint>>>>(emptyList())
@@ -239,6 +247,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     }
 
     fun backFromRecord() {
+        recordSamples = recordSamples.dropLast(1)
         drawReturnToRecord = false
         screen = Screen.DRAW
     }
@@ -289,10 +298,11 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                     label = "screen"
                 ) { current ->
                     when (current) {
-                        Screen.LIST -> GestureListScreen(
+                        Screen.LIST -> listState.SaveableStateProvider("library") { GestureListScreen(
                             dao = dao,
                             settings = settings,
                             onAdd = { category ->
+                                draftState.removeState("record")
                                 recordCategory = category
                                 recordSamples = emptyList()
                                 drawReturnToRecord = false
@@ -302,8 +312,9 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                             onAddSample = { gesture ->
                                 addingSampleFor = gesture
                             }
-                        )
+                        ) }
                         Screen.DRAW -> DrawGestureScreen(
+                            dao = dao,
                             category = recordCategory,
                             existingSamples = recordSamples,
                             settings = settings,
@@ -313,7 +324,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                                 screen = Screen.RECORD
                             }
                         )
-                        Screen.RECORD -> RecordScreen(
+                        Screen.RECORD -> draftState.SaveableStateProvider("record") { RecordScreen(
                             dao = dao,
                             settings = settings,
                             initialCategory = recordCategory,
@@ -334,7 +345,7 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
                                 drawReturnToRecord = false
                                 screen = Screen.LIST
                             }
-                        )
+                        ) }
                         Screen.TEST -> TestPadScreen(
                             dao = dao,
                             settings = settings,
@@ -353,6 +364,12 @@ fun MainScreen(dao: GestureDao, settings: SettingsStore, openSettings: Boolean =
     }
 }
 
+private fun Modifier.accentHalo(accent: Color): Modifier = drawBehind {
+    if (size.width > 0f) drawRect(androidx.compose.ui.graphics.Brush.radialGradient(
+        listOf(accent.copy(alpha = .12f), Color.Transparent),
+        center = androidx.compose.ui.geometry.Offset(size.width, 0f), radius = size.width * .7f))
+}
+
 // list
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -368,10 +385,15 @@ private fun GestureListScreen(
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Gesture?>(null) }
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     var deleting by remember { mutableStateOf<Gesture?>(null) }
     var detail by remember { mutableStateOf<Gesture?>(null) }
     // Tabs are back without an "All" tab. Default: Apps.
-    var category by remember { mutableStateOf(GestureCategory.APPS) }
+    var page by rememberSaveable { mutableStateOf(LibraryPage.Home) }
+    BackHandler(enabled = page != LibraryPage.Home) { page = LibraryPage.Home }
+    val running by FlickAccessibilityService.running.collectAsState()
+    val history by dao.history.collectAsState(initial = emptyList())
+    var category by rememberSaveable { mutableStateOf(GestureCategory.APPS) }
     val filtered = remember(gestures, category) {
         gestures.filter { category.matches(it) }
     }
@@ -382,14 +404,16 @@ private fun GestureListScreen(
         initial = SettingsStore.DEFAULT_SORT_ORDER
     )
     val displayed = remember(filtered, sortOrder) {
-        if (sortOrder == SettingsStore.SORT_AZ) {
+        if (sortOrder == SettingsStore.SORT_USED) {
+            filtered.sortedWith(compareByDescending<Gesture> { it.useCount }.thenBy { it.name.lowercase() })
+        } else if (sortOrder == SettingsStore.SORT_AZ) {
             filtered.sortedBy { it.name.lowercase() }
         } else {
             filtered.sortedBy { it.id }
         }
     }
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
-        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+        initial = false
     )
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
@@ -400,25 +424,17 @@ private fun GestureListScreen(
         // navigationBarsPadding, so the Scaffold must not add its own
         // system insets on top, or the content would sit too low.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
+        bottomBar = { LibraryNavigation(page) { page = it } },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            if (page == LibraryPage.Home || page == LibraryPage.Gestures)
+            androidx.compose.material3.FloatingActionButton(
                 onClick = { onAdd(category) },
                 containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = FlickBrand.OnCyan,
+                contentColor = FlickBrand.OnAccent,
                 modifier = Modifier.pressScale()
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    when (category) {
-                        GestureCategory.APPS -> "Add App"
-                        GestureCategory.ACTIONS -> "Add Action"
-                        GestureCategory.WEBPAGES -> "Add Webpage"
-                        GestureCategory.FLOWS -> "Add Flow"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Icon(Icons.Filled.Add, contentDescription = "Add gesture to ${category.label}")
             }
         }
     ) { padding ->
@@ -426,6 +442,7 @@ private fun GestureListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .accentHalo(accentColor())
                 .padding(horizontal = 20.dp)
                 .padding(top = 12.dp)
         ) {
@@ -436,21 +453,13 @@ private fun GestureListScreen(
             // overlay pad's gear and the detail sheet's Settings
             // entry still work too.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painter = painterResource(R.drawable.flick_wordmark),
-                    contentDescription = "Flick",
-                    contentScale = ContentScale.FillHeight,
-                    modifier = Modifier.height(34.dp)
-                )
+                Column {
+                    FlickWordmark()
+                    Text("Gesture Launcher", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall)
+                }
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    context.startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://buymeacoffee.com/flickapp")
-                        )
-                    )
-                }) {
+                IconButton(onClick = { openSupportPage(context) }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_mug),
                         contentDescription = "Buy me a coffee"
@@ -464,147 +473,72 @@ private fun GestureListScreen(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "GESTURES (${gestures.size} saved)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                    color = FlickBrand.TextMuted
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                var sortMenuOpen by remember { mutableStateOf(false) }
-                Box {
-                    TextButton(onClick = { sortMenuOpen = true }) {
-                        Text(
-                            if (sortOrder == SettingsStore.SORT_AZ) "A-Z" else "Created",
-                            color = accentColor()
-                        )
-                        Icon(
-                            Icons.Filled.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = accentColor()
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = sortMenuOpen,
-                        onDismissRequest = { sortMenuOpen = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Creation order") },
-                            onClick = {
-                                scope.launch {
-                                    settings.setSortOrder(SettingsStore.SORT_CREATED)
-                                }
-                                sortMenuOpen = false
-                            },
-                            leadingIcon = if (sortOrder == SettingsStore.SORT_CREATED) {
-                                { Icon(Icons.Filled.Check, contentDescription = null) }
-                            } else null
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Name (A to Z)") },
-                            onClick = {
-                                scope.launch {
-                                    settings.setSortOrder(SettingsStore.SORT_AZ)
-                                }
-                                sortMenuOpen = false
-                            },
-                            leadingIcon = if (sortOrder == SettingsStore.SORT_AZ) {
-                                { Icon(Icons.Filled.Check, contentDescription = null) }
-                            } else null
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                GestureCategory.entries.forEach { tab ->
-                    CategoryTab(
-                        label = tab.label,
-                        selected = category == tab,
-                        onClick = { category = tab }
-                    )
-                }
-            }
             Spacer(modifier = Modifier.height(12.dp))
-            if (filtered.isEmpty()) {
-                // Per-tab empty state: a centred icon, a line
-                // saying what is missing, and the matching Add
-                // button. Never a blank screen.
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 56.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        when (category) {
-                            GestureCategory.APPS -> Icons.AutoMirrored.Filled.ExitToApp
-                            GestureCategory.ACTIONS -> Icons.Filled.PlayArrow
-                            GestureCategory.WEBPAGES -> Icons.Filled.Share
-                            GestureCategory.FLOWS -> Icons.AutoMirrored.Filled.List
-                        },
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        when (category) {
-                            GestureCategory.APPS -> "No apps yet"
-                            GestureCategory.ACTIONS -> "No actions yet"
-                            GestureCategory.WEBPAGES -> "No webpages yet"
-                            GestureCategory.FLOWS -> "No flows yet"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = FlickBrand.TextWhite
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        when (category) {
-                            GestureCategory.APPS ->
-                                "Draw a gesture and link it to an app to launch."
-                            GestureCategory.ACTIONS ->
-                                "Draw a gesture and link it to a phone action."
-                            GestureCategory.WEBPAGES ->
-                                "Draw a gesture and link it to a webpage to open."
-                            GestureCategory.FLOWS ->
-                                "Draw a gesture and link it to a flow of actions."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Button(
-                        onClick = { onAdd(category) },
-                        modifier = Modifier
-                            .height(56.dp)
-                            .pressScale()
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            when (category) {
-                                GestureCategory.APPS -> "Add App"
-                                GestureCategory.ACTIONS -> "Add Action"
-                                GestureCategory.WEBPAGES -> "Add Webpage"
-                                GestureCategory.FLOWS -> "Add Flow"
-                            },
-                            style = MaterialTheme.typography.titleMedium
-                        )
+            if (page == LibraryPage.Stats || page == LibraryPage.History) {
+                Text(page.name, fontFamily = FontFamily.Serif, fontSize = 32.sp)
+                Spacer(Modifier.height(16.dp))
+                if (page == LibraryPage.Stats) UsageStats(gestures) else UsageHistory(history)
+                return@Column
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(if (page == LibraryPage.Gestures) 12.dp else 8.dp),
+                contentPadding = PaddingValues(bottom = 88.dp)) {
+                item {
+                    Column {
+                        if (page == LibraryPage.Home) HomeSummary(gestures, running)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            GestureCategory.entries.forEach { tab ->
+                                CategoryTab(
+                                    tab = tab,
+                                    selected = category == tab,
+                                    onClick = { category = tab }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Gestures  ${filtered.size}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 2.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            var sortMenuOpen by remember { mutableStateOf(false) }
+                            Box {
+                                TextButton(onClick = { sortMenuOpen = true }) {
+                                    Text(
+                                        when (sortOrder) { SettingsStore.SORT_AZ -> "A-Z"; SettingsStore.SORT_USED -> "Most used"; else -> "Created" },
+                                        color = accentColor()
+                                    )
+                                    Icon(
+                                        Icons.Filled.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = accentColor()
+                                    )
+                                }
+                                FlickMenu(sortMenuOpen, { sortMenuOpen = false }) {
+                                    for ((order, label) in listOf(SettingsStore.SORT_USED to "Most used",
+                                        SettingsStore.SORT_CREATED to "Creation order", SettingsStore.SORT_AZ to "Name (A to Z)")) {
+                                        FlickMenuItem(label, if (order == sortOrder) Icons.Filled.Check else Icons.AutoMirrored.Filled.List) {
+                                            sortMenuOpen = false
+                                            scope.launch { settings.setSortOrder(order) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                     }
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 96.dp)
-                ) {
+                if (filtered.isEmpty()) {
+                    item { Text("No ${category.label.lowercase()} yet", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)) }
+                } else {
                     items(displayed, key = { it.id }) { gesture ->
                         AnimatedVisibility(
                             visible = true,
@@ -616,7 +550,11 @@ private fun GestureListScreen(
                                 gesture = gesture,
                                 onClick = { detail = gesture },
                                 onEdit = { editing = gesture },
-                                onDelete = { deleting = gesture }
+                                onDelete = { deleting = gesture },
+                                onDuplicate = { scope.launch {
+                                    dao.duplicate(gesture)
+                                } },
+                                onTest = { ActionExecutor.execute(context, gesture, Feedback(vibrateOnRun, soundOnRun)) }
                             )
                         }
                     }
@@ -654,12 +592,16 @@ private fun GestureListScreen(
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete gesture?") },
-            text = { Text("Delete \"${gesture.name}\"? This cannot be undone.") },
+            text = { Text("Delete \"${gesture.name}\"?") },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
                         dao.delete(gesture)
                         deleting = null
+                        if (snackbar.showSnackbar("Deleted ${gesture.name}", "Undo",
+                            duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            dao.restore(gesture)
+                        }
                     }
                 }) { Text("Delete") }
             },
@@ -712,81 +654,60 @@ private fun GestureListScreen(
     }
 }
 
-/**
- * A category pill for the home screen: selected is a cyan
- * fill with dark text; unselected is transparent with a cyan outline
- * and cyan text, like the picked design.
- */
 @Composable
-private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) accentColor() else Color.Transparent)
-            .border(
-                width = if (selected) 0.dp else 1.dp,
-                color = accentColor(),
-                shape = RoundedCornerShape(20.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = if (selected) FlickBrand.OnCyan else accentColor()
-        )
+private fun CategoryTab(tab: GestureCategory, selected: Boolean, onClick: () -> Unit) {
+    val tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(Modifier.clip(CircleShape)
+        .background(if (selected) accentColor() else MaterialTheme.colorScheme.surfaceVariant)
+        .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (tab == GestureCategory.PEOPLE) Icons.Filled.Person else iconFor(tab.defaultAction()),
+            null, Modifier.size(15.dp), tint = tint)
+        Spacer(Modifier.width(4.dp))
+        Text(tab.label, style = MaterialTheme.typography.labelMedium, color = tint)
     }
 }
 
-/**
- * A gesture card: a dark rounded card, holding the
- * cyan-outlined gesture thumbnail, the target's icon in a
- * circle, and the name with "· N samples" on the same line
- * (wrapping to a second line when the name is long). Tap
- * opens the detail sheet; long-press still deletes, as
- * before. Disabled gestures are dimmed so their state is
- * obvious at a glance.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GestureCard(
     gesture: Gesture,
     onClick: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onDuplicate: () -> Unit,
+    onTest: () -> Unit
 ) {
+    var menu by remember { mutableStateOf(false) }
     val sampleText =
         "${gesture.sampleCount()} sample${if (gesture.sampleCount() == 1) "" else "s"}"
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .border(1.dp, FlickBrand.Outline, RoundedCornerShape(20.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .combinedClickable(onClick = onClick, onLongClick = onDelete)
+            .combinedClickable(onClick = onClick, onLongClick = { menu = true })
             .graphicsLayer { alpha = if (gesture.enabled) 1f else 0.55f }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         GestureGlyph(
             template = gesture.template,
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(48.dp)
         )
-        Spacer(modifier = Modifier.width(12.dp))
-        ActionIcon(gesture, size = 44.dp, iconSize = 24.dp, circular = true)
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        ActionIcon(gesture, size = 32.dp, iconSize = 24.dp, circular = true)
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = buildAnnotatedString {
                 withStyle(
                     SpanStyle(
-                        color = FlickBrand.TextWhite,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold
                     )
                 ) {
-                    append(gesture.name)
+                    append(if (GestureCategory.PEOPLE.matches(gesture)) ActionExecutor.contactName(gesture.payload) else gesture.name)
                 }
                 withStyle(
                     SpanStyle(
@@ -794,12 +715,29 @@ private fun GestureCard(
                         fontWeight = FontWeight.Normal
                     )
                 ) {
-                    append(" · $sampleText")
+                    append("\n")
+                    if (GestureCategory.PEOPLE.matches(gesture))
+                        append("Call · ")
+                    append(sampleText)
                 }
             },
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f)
         )
+        IconButton(onClick = onTest, enabled = gesture.enabled, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Filled.PlayArrow, "Test ${gesture.name}", Modifier.size(20.dp))
+        }
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.size(40.dp)) {
+                Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, "Actions for ${gesture.name}")
+            }
+            FlickMenu(menu, { menu = false }) {
+                FlickMenuItem("Edit", Icons.Filled.Create) { menu = false; onEdit() }
+                FlickMenuItem("Delete", Icons.Filled.Delete, destructive = true) { menu = false; onDelete() }
+                FlickMenuItem("Duplicate", null) { menu = false; onDuplicate() }
+                FlickMenuItem("Test", Icons.Filled.PlayArrow, enabled = gesture.enabled) { menu = false; onTest() }
+            }
+        }
     }
 }
 
@@ -859,12 +797,38 @@ private fun GestureDetailSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(bottom = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+        GestureGlyph(
+            template = gesture.template,
+            modifier = Modifier.size(112.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            gesture.name,
+            fontSize = 28.sp, fontFamily = FontFamily.Serif,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        SampleProgress(gesture.sampleCount(), "${gesture.sampleCount()} of ${Gesture.MAX_SAMPLES} samples")
+        Spacer(Modifier.height(12.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -889,7 +853,7 @@ private fun GestureDetailSheet(
                     Icon(
                         Icons.Filled.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFFFF5252)
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
                 Text("Delete", style = MaterialTheme.typography.bodySmall)
@@ -904,35 +868,6 @@ private fun GestureDetailSheet(
                 Text("Test", style = MaterialTheme.typography.bodySmall)
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        GestureGlyph(
-            template = gesture.template,
-            modifier = Modifier.size(200.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            gesture.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = FlickBrand.TextWhite
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ActionIcon(gesture, size = 20.dp, iconSize = 12.dp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            "${gesture.sampleCount()} sample${if (gesture.sampleCount() == 1) "" else "s"} of " +
-                "${Gesture.MAX_SAMPLES}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         if (!gesture.enabled) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -956,11 +891,11 @@ private fun GestureDetailSheet(
 
 /**
  * The gesture itself, drawn small: the stored template strokes scaled
- * into a chip, in brand cyan. Each card shows the shape to draw, so the
+ * into a chip in the selected accent colour. Each card shows the shape to draw, so the
  * list is readable at a glance.
  */
 @Composable
-private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
+internal fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     val strokes = remember(template) { Recognizer.strokesFromString(template) }
     // Glyphs follow the app accent, read here because the
     // Canvas draw scope below is not a composable scope.
@@ -968,7 +903,8 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .border(2.dp, accent, RoundedCornerShape(8.dp))
+            .background(accent.copy(alpha = .045f))
+            .border(1.dp, accent.copy(alpha = .48f), RoundedCornerShape(8.dp))
     ) {
         Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
             if (strokes.isEmpty()) return@Canvas
@@ -1014,6 +950,7 @@ private fun GestureGlyph(template: String, modifier: Modifier = Modifier) {
  */
 @Composable
 private fun SampleSlotPlaceholder(modifier: Modifier = Modifier) {
+    val outline = MaterialTheme.colorScheme.outline
     Box(
         modifier = modifier.drawBehind {
             val path = Path().apply {
@@ -1026,7 +963,7 @@ private fun SampleSlotPlaceholder(modifier: Modifier = Modifier) {
             }
             drawPath(
                 path,
-                FlickBrand.Outline,
+                outline,
                 style = Stroke(
                     width = 1.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(
@@ -1078,14 +1015,14 @@ private fun UnderlineNameField(
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = FlickBrand.TextMuted
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
             textStyle = MaterialTheme.typography.titleLarge.copy(
-                color = FlickBrand.TextWhite,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             ),
@@ -1103,7 +1040,7 @@ private fun UnderlineNameField(
                 }
                 HorizontalDivider(
                     thickness = 1.dp,
-                    color = FlickBrand.Outline
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
         }
@@ -1126,7 +1063,12 @@ private fun EditGestureDialog(
     var action by remember { mutableStateOf(ActionSelection(gesture.actionType, gesture.payload)) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit gesture") },
+        containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(20.dp),
+        title = { Row(verticalAlignment = Alignment.CenterVertically) {
+            GestureGlyph(gesture.template, Modifier.size(42.dp))
+            Spacer(Modifier.width(12.dp))
+            Text("Edit gesture", fontFamily = FontFamily.Serif)
+        } },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 UnderlineNameField(
@@ -1151,16 +1093,7 @@ private fun EditGestureDialog(
                     }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    "Samples: $sampleCount of ${Gesture.MAX_SAMPLES}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                Text(
-                    "More samples make recognition more accurate.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                SampleProgress(sampleCount, "$sampleCount of ${Gesture.MAX_SAMPLES} samples")
                 if (onAddSample != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
@@ -1198,21 +1131,39 @@ private fun EditGestureDialog(
  */
 @Composable
 private fun DrawGestureScreen(
+    dao: GestureDao,
     category: GestureCategory?,
     existingSamples: List<List<List<StrokePoint>>>,
     settings: SettingsStore,
     onBack: () -> Unit,
     onDone: (List<List<List<StrokePoint>>>) -> Unit
 ) {
-    val strokeColorArgb by settings.strokeColor.collectAsState(
-        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
-    )
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
     )
     var captured by remember { mutableStateOf<List<List<StrokePoint>>?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var padKey by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var conflict by remember { mutableStateOf<Gesture?>(null) }
+    conflict?.let { existing ->
+        AlertDialog(onDismissRequest = { conflict = null },
+            shape = RoundedCornerShape(20.dp), containerColor = MaterialTheme.colorScheme.surface,
+            icon = { Icon(Icons.Filled.Info, null, tint = accentColor()) },
+            title = { Text("Similar gesture", fontFamily = FontFamily.Serif) },
+            text = { Text("This resembles “${existing.name}”. Redraw it or keep both.") },
+            confirmButton = { TextButton(onClick = {
+                conflict = null
+                captured?.let { onDone(existingSamples + listOf(it)) }
+            }) { Text("Keep gesture") } },
+            dismissButton = { TextButton(onClick = {
+                conflict = null
+                captured = null
+                drawn = false
+                padKey++
+            }) { Text("Redraw") } })
+    }
 
     Column(
         modifier = Modifier
@@ -1224,30 +1175,31 @@ private fun DrawGestureScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            Text(
-                "Draw Gesture",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = FlickBrand.TextWhite,
-                modifier = Modifier.weight(1f)
-            )
+            Column(Modifier.weight(1f)) { FlowHeading("Step 1 of 2", "Draw gesture") }
             TextButton(
-                enabled = captured != null,
-                onClick = { captured?.let { onDone(existingSamples + listOf(it)) } }
+                enabled = captured != null && !checking,
+                onClick = {
+                    captured?.let { sample ->
+                        checking = true
+                        scope.launch {
+                            val library = dao.getAll()
+                            // Compare each gesture independently. Two identical existing shapes
+                            // would trigger the library matcher's ambiguity rejection.
+                            conflict = withContext(Dispatchers.Default) {
+                                library.firstOrNull { Recognizer.recognizeMulti(sample, it.multiTemplates()) != null }
+                            }
+                            checking = false
+                            if (conflict == null) onDone(existingSamples + listOf(sample))
+                        }
+                    }
+                }
             ) {
                 Icon(Icons.Filled.Check, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Done")
             }
         }
-        if (existingSamples.isNotEmpty()) {
-            Text(
-                "Adding sample ${existingSamples.size + 1} of ${Gesture.MAX_SAMPLES}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 56.dp, top = 4.dp)
-            )
-        }
+        SampleProgress(existingSamples.size, "Sample ${existingSamples.size + 1} of ${Gesture.MAX_SAMPLES}")
         Spacer(modifier = Modifier.height(12.dp))
         Box(
             modifier = Modifier
@@ -1271,7 +1223,7 @@ private fun DrawGestureScreen(
                         onGestureFinished = { captured = it },
                         onCleared = { captured = null },
                         onFirstStroke = { drawn = true },
-                        strokeColor = Color(strokeColorArgb),
+
                         strokeWidth = strokeWidthPx
                     )
                 }
@@ -1308,10 +1260,10 @@ private fun DrawGestureScreen(
                         "Gesture captured: ${captured!!.size} stroke" +
                             if (captured!!.size == 1) "" else "s",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = FlickBrand.TextWhite
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(onClick = {
+                    OutlinedButton(enabled = !checking, onClick = {
                         captured = null
                         drawn = false
                         padKey++
@@ -1327,7 +1279,7 @@ private fun DrawGestureScreen(
                 GestureCategory.APPS -> "Then choose the app it launches."
                 GestureCategory.ACTIONS -> "Then choose the phone action it runs."
                 GestureCategory.WEBPAGES -> "Then choose the webpage it opens."
-                GestureCategory.FLOWS -> "Then build the flow it runs."
+                GestureCategory.PEOPLE -> "Then choose a person to call."
                 else -> "Then name it and choose what it does."
             },
             style = MaterialTheme.typography.bodySmall,
@@ -1384,14 +1336,17 @@ private fun RecordScreen(
     // starts the drawing over. The action list is locked to
     // the tab the user came from (contextual Add): Apps offers
     // only apps, Actions only phone actions, Webpages only
-    // links, Flows only flows.
+    // links, People only contacts.
     val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     // True when the name came from an app pick: a later app
     // pick refills it, but a name the user typed by hand is never
     // overwritten. Editing the field by hand clears the flag.
-    var nameAutoFilled by remember { mutableStateOf(false) }
-    var action by remember {
+    var nameAutoFilled by rememberSaveable { mutableStateOf(false) }
+    var action by rememberSaveable(stateSaver = androidx.compose.runtime.saveable.listSaver<ActionSelection, String>(
+        save = { listOf(it.type.name, it.payload) },
+        restore = { ActionSelection(ActionType.valueOf(it[0]), it[1]) }
+    )) {
         mutableStateOf(
             ActionSelection(
                 initialCategory?.defaultAction() ?: ActionType.LAUNCH_APP,
@@ -1400,146 +1355,127 @@ private fun RecordScreen(
         )
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
-    ) {
-        item {
+    val accent = accentColor()
+    val shape = RoundedCornerShape(18.dp)
+    val category = initialCategory ?: GestureCategory.APPS
+    val (bindingTitle, bindingSummary) = when (category) {
+        GestureCategory.APPS -> "Launch an app" to "Open an app with this gesture."
+        GestureCategory.WEBPAGES -> "Open a webpage" to "Open a link with this gesture."
+        GestureCategory.ACTIONS -> "Run a phone action" to "Choose what your phone does."
+        GestureCategory.PEOPLE -> "Call a contact" to "Choose a person to call."
+    }
+    Column(Modifier.fillMaxSize().accentHalo(accent).padding(horizontal = 20.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                Column {
+                    FlowHeading("Step 2 of 2", "Bind gesture")
+                    val subtitle = when (category) {
+                        GestureCategory.APPS -> "Give it a name, add samples and choose an app to launch."
+                        GestureCategory.WEBPAGES -> "Name your gesture and choose a webpage."
+                        GestureCategory.ACTIONS -> "Name your gesture and choose a phone action."
+                        GestureCategory.PEOPLE -> "Name your gesture and choose a contact."
+                    }
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(
-                    "New gesture",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = FlickBrand.TextWhite
-                )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            // The name field is an underline field, centred at
-            // 70% width: no box, no border, just centred text over
-            // a thin grey underline, with the label centred above
-            // it. Its text is filled in from the app the user
-            // picks, and stays editable after.
-            UnderlineNameField(
-                value = name,
-                onValueChange = {
-                    name = it
-                    nameAutoFilled = false
-                },
-                label = "Gesture name",
-                fieldFraction = 0.7f,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        item {
-            Text(
-                "Your gesture",
-                style = MaterialTheme.typography.titleMedium,
-                color = FlickBrand.TextWhite
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            // No big preview box at the top: these three small
-            // boxes ARE the gesture display. Box 1 holds the
-            // first sample; empty slots are dashed placeholders,
-            // and adding a sample fills the next empty box. Max 3,
-            // as before (main template + two extras).
+            OutlinedTextField(value = name, onValueChange = {
+                name = it
+                nameAutoFilled = false
+            }, modifier = Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface).accentHalo(accent),
+                shape = shape, singleLine = true, placeholder = { Text("Gesture name") },
+                leadingIcon = { Icon(Icons.Filled.Create, null, tint = accent) },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(unfocusedBorderColor = accent.copy(alpha = .45f)))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Your gesture", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                Row(Modifier.background(accent.copy(alpha = .10f), CircleShape)
+                    .border(1.dp, accent.copy(alpha = .3f), CircleShape).padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(painterResource(R.drawable.ic_layers), null, Modifier.size(16.dp), tint = accent)
+                    Spacer(Modifier.width(5.dp))
+                    Text("${initialSamples.size} of ${Gesture.MAX_SAMPLES} samples", style = MaterialTheme.typography.labelMedium)
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                for (i in 0 until Gesture.MAX_SAMPLES) {
-                    if (i < initialSamples.size) {
-                        GestureGlyph(
-                            template = Recognizer.strokesToString(initialSamples[i]),
-                            modifier = Modifier.size(96.dp)
-                        )
+                repeat(Gesture.MAX_SAMPLES) { index ->
+                    val slot = Modifier.weight(1f).aspectRatio(1.15f)
+                    if (index < initialSamples.size) {
+                        Box(slot) {
+                            GestureGlyph(Recognizer.strokesToString(initialSamples[index]), Modifier.fillMaxSize())
+                            Icon(Icons.Filled.Check, "Sample ${index + 1} recorded",
+                                Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp)
+                                    .background(accent, CircleShape).padding(2.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                        }
                     } else {
-                        SampleSlotPlaceholder(modifier = Modifier.size(96.dp))
+                        Box(slot.clip(shape).clickable(onClickLabel = "Add sample", onClick = onAddSample),
+                            contentAlignment = Alignment.Center) {
+                            SampleSlotPlaceholder(Modifier.fillMaxSize())
+                            Icon(Icons.Filled.Add, "Add sample", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onRedraw,
-                    modifier = Modifier.weight(1f)
-                ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onRedraw, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text("Redraw")
                 }
-                // Extra samples make recognition more accurate:
-                // draw the same gesture again, a little
-                // differently if you like. This goes back to the
-                // draw screen, which appends the new sample to
-                // the ones already kept.
-                if (initialSamples.size < Gesture.MAX_SAMPLES) {
-                    OutlinedButton(
-                        onClick = onAddSample,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Add sample")
-                    }
+                OutlinedButton(onClick = onAddSample, enabled = initialSamples.size < Gesture.MAX_SAMPLES,
+                    modifier = Modifier.weight(1f)) {
+                    Icon(painterResource(R.drawable.ic_layers_add), null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add sample")
                 }
             }
-            Text(
-                "${initialSamples.size} sample" +
-                    if (initialSamples.size == 1) "" else "s" +
-                    " recorded. More samples make recognition more accurate.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        item {
-            Text(
-                "What should it do?",
-                style = MaterialTheme.typography.titleMedium,
-                color = FlickBrand.TextWhite
-            )
-            ActionPicker(
-                action = action,
-                onChange = { action = it },
-                filter = initialCategory,
-                // Picking an app fills the name from the app's
-                // label, unless the user already typed a name.
-                onAppPicked = { label ->
+            Column(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)
+                .accentHalo(accent).border(1.dp, accent.copy(alpha = .3f), shape).padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (category == GestureCategory.APPS) Icon(painterResource(R.drawable.ic_app_grid), null, tint = accent)
+                    else Icon(iconFor(category.defaultAction()), null, tint = accent)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(bindingTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(bindingSummary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                ActionPicker(action, onChange = { action = it }, filter = initialCategory, onAppPicked = { label ->
                     if (name.isBlank() || nameAutoFilled) {
                         name = label
                         nameAutoFilled = true
                     }
-                }
-            )
-        }
-        item {
-            Button(
-                enabled = name.isNotBlank() && initialSamples.isNotEmpty() && action.isValid(),
-                onClick = {
-                    scope.launch {
-                        dao.insert(
-                            Gesture(
-                                name = Gesture.uniqueName(name, dao.getAll()),
-                                template = Recognizer.strokesToString(initialSamples[0]),
-                                actionType = action.type,
-                                payload = action.payload,
-                                extraTemplates = initialSamples.drop(1)
-                                    .joinToString("\n") { Recognizer.strokesToString(it) }
-                            )
-                        )
-                        onSaved()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .pressScale()
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Save gesture", style = MaterialTheme.typography.titleMedium)
+                })
             }
         }
+        Button(
+            enabled = name.isNotBlank() && initialSamples.isNotEmpty() && action.isValid(),
+            onClick = {
+                scope.launch {
+                    dao.insert(
+                        Gesture(
+                            name = Gesture.uniqueName(name, dao.getAll()),
+                            template = Recognizer.strokesToString(initialSamples[0]),
+                            actionType = action.type,
+                            payload = action.payload,
+                            extraTemplates = initialSamples.drop(1).take(Gesture.MAX_SAMPLES - 1)
+                                .joinToString("\n") { Recognizer.strokesToString(it) }
+                        )
+                    )
+                    onSaved()
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .pressScale()
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Save gesture", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -1560,9 +1496,6 @@ private fun AddSampleScreen(
     onSaved: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val strokeColorArgb by settings.strokeColor.collectAsState(
-        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
-    )
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
     )
@@ -1582,24 +1515,14 @@ private fun AddSampleScreen(
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
-                Text(
-                    "Add a sample",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                FlowHeading("Record sample", gesture.name)
             }
-            Text(
-                "\"${gesture.name}\" has $current sample${if (current == 1) "" else "s"} " +
-                    "of ${Gesture.MAX_SAMPLES}. Draw the same gesture again, " +
-                    "a little differently if you like.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            SampleProgress(current, "Sample ${current + 1} of ${Gesture.MAX_SAMPLES}")
         }
         item {
             Text(
-                "Draw the gesture in the box:",
-                color = FlickBrand.TextWhite
+                "Draw the same gesture again",
+                color = MaterialTheme.colorScheme.onSurface
             )
             Box(
                 modifier = Modifier
@@ -1617,7 +1540,7 @@ private fun AddSampleScreen(
                     modifier = Modifier.fillMaxSize().padding(8.dp),
                     onGestureFinished = { captured = it },
                     onCleared = { captured = null },
-                    strokeColor = Color(strokeColorArgb),
+
                     strokeWidth = strokeWidthPx
                 )
             }
@@ -1665,7 +1588,7 @@ private data class ActionSelection(val type: ActionType, val payload: String) {
         ActionType.LAUNCH_APP -> payload.isNotBlank()
         ActionType.OPEN_URL -> payload.isNotBlank()
         ActionType.CALL_CONTACT -> ActionExecutor.contactNumber(payload).isNotBlank()
-        ActionType.RUN_FLOW -> FlowCodec.decode(payload).size >= 2
+        ActionType.CHAT_CONTACT -> ActionExecutor.contactNumber(payload).isNotBlank()
         else -> true
     }
 }
@@ -1674,18 +1597,16 @@ private data class ActionSelection(val type: ActionType, val payload: String) {
 private fun ActionPicker(
     action: ActionSelection,
     onChange: (ActionSelection) -> Unit,
-    allowFlow: Boolean = true,
     filter: GestureCategory? = null,
     // Called with the picked app's label: the record form
     // fills the gesture name from it. Null where no name field
-    // exists (flow steps), so picking there changes nothing.
+    // exists, so picking there changes nothing.
     onAppPicked: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showAppPicker by remember { mutableStateOf(false) }
-    var pickedAppLabel by remember { mutableStateOf<String?>(null) }
-    var pickedContactLabel by remember { mutableStateOf<String?>(null) }
+    var pickedAppLabel by remember(action.payload) { mutableStateOf<String?>(null) }
 
     // When editing an existing gesture the payload is a package name
     // and no label was picked yet in this dialog, so the button
@@ -1712,17 +1633,24 @@ private fun ActionPicker(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val contact = withContext(Dispatchers.IO) { readContact(context, uri) }
+                val contact = withContext(Dispatchers.IO) { runCatching { readContact(context, uri) }.getOrNull() }
                 if (contact != null) {
-                    pickedContactLabel = contact.first
+                    onAppPicked?.invoke(contact.first)
                     onChange(
                         ActionSelection(
-                            ActionType.CALL_CONTACT,
-                            "${contact.first}\n${contact.second}"
+                            action.type,
+                            "${contact.first}\n${contact.second}\n${contact.third}"
                         )
                     )
-                }
+                } else Toast.makeText(context, "Choose a contact with a phone number", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            val photo = withContext(Dispatchers.IO) { com.ibfavas.flick.data.ContactPhoto.read(context, uri) }
+            if (photo != null) onChange(action.copy(payload = "${ActionExecutor.contactName(action.payload)}\n${ActionExecutor.contactNumber(action.payload)}\n$photo"))
+            else Toast.makeText(context, "Could not open this image", Toast.LENGTH_SHORT).show()
         }
     }
     val contactPermissionLauncher = rememberLauncherForActivityResult(
@@ -1730,180 +1658,81 @@ private fun ActionPicker(
     ) { grants ->
         if (grants[Manifest.permission.READ_CONTACTS] == true) {
             contactPicker.launch(null)
+        } else {
+            Toast.makeText(context, "Allow contact access to choose a person", Toast.LENGTH_SHORT).show()
         }
     }
 
     // Contextual Add: when the user adds from a tab, only
     // that tab's category is offered. No filter (edit dialog,
-    // flow steps) means every category, as before.
-    val showApps = filter == null || filter == GestureCategory.APPS
-    val showUrls = filter == null || filter == GestureCategory.WEBPAGES
-    val showActions = filter == null || filter == GestureCategory.ACTIONS
-    val showFlows = allowFlow && (filter == null || filter == GestureCategory.FLOWS)
-
-    Column {
-        if (showApps) {
-        ActionOption(
-            label = "Launch an app",
-            selected = action.type == ActionType.LAUNCH_APP,
-            onClick = { onChange(ActionSelection(ActionType.LAUNCH_APP, action.payload)) }
-        )
-        if (action.type == ActionType.LAUNCH_APP) {
-            // Centred like the name field: narrower than
-            // the screen, centred horizontally.
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                OutlinedButton(
-                    onClick = { showAppPicker = true },
-                    modifier = Modifier.fillMaxWidth(0.7f)
-                ) {
-                    Text(pickedAppLabel ?: if (action.payload.isBlank()) "Choose app" else action.payload)
+    // for example) means every category.
+    val peopleTypes = listOf(ActionType.CALL_CONTACT, ActionType.CHAT_CONTACT)
+    val choices = when (filter) {
+        GestureCategory.APPS -> listOf(ActionType.LAUNCH_APP)
+        GestureCategory.WEBPAGES -> listOf(ActionType.OPEN_URL)
+        GestureCategory.PEOPLE -> listOf(ActionType.CALL_CONTACT)
+        GestureCategory.ACTIONS -> ActionType.entries.filter { it != ActionType.LAUNCH_APP &&
+            it != ActionType.OPEN_URL && it !in peopleTypes }
+        null -> ActionType.entries.filter { it !in peopleTypes || it == action.type }
+    }
+    fun label(type: ActionType): String = when (type) {
+        ActionType.LAUNCH_APP -> "Launch an app"
+        ActionType.OPEN_URL -> "Open a link"
+        ActionType.CALL_CONTACT -> "Call a contact"
+        ActionType.CHAT_CONTACT -> "WhatsApp chat"
+        else -> ActionExecutor.describeAction(type, "")
+    }
+    fun select(type: ActionType) {
+        val keepPayload = (type in peopleTypes && action.type in peopleTypes) ||
+            (type == ActionType.LAUNCH_APP && action.type == type)
+        onChange(ActionSelection(type, if (keepPayload) action.payload else ""))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (filter == null) {
+            choices.forEach { type -> ActionOption(label(type), action.type == type) { select(type) } }
+        } else if (choices.size > 1) {
+            var open by remember { mutableStateOf(false) }
+            Box {
+                BindingPickerRow(label(action.type), { open = true }) {
+                    Icon(iconFor(action.type), null, tint = accentColor())
+                }
+                FlickMenu(open, { open = false }) {
+                    choices.forEach { type ->
+                        FlickMenuItem(label(type), iconFor(type)) {
+                            select(type)
+                            open = false
+                        }
+                    }
                 }
             }
         }
-        }
-        if (showUrls) {
-        ActionOption(
-            label = "Open a link",
-            selected = action.type == ActionType.OPEN_URL,
-            onClick = { onChange(ActionSelection(ActionType.OPEN_URL, "")) }
-        )
-        if (action.type == ActionType.OPEN_URL) {
-            OutlinedTextField(
-                value = action.payload,
-                onValueChange = { onChange(ActionSelection(ActionType.OPEN_URL, it)) },
-                label = { Text("URL, e.g. example.com") },
-                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
-            )
-        }
-        }
-        if (showActions) {
-        ActionOption(
-            label = "Flashlight on",
-            selected = action.type == ActionType.FLASHLIGHT_ON,
-            onClick = { onChange(ActionSelection(ActionType.FLASHLIGHT_ON, "")) }
-        )
-        ActionOption(
-            label = "Flashlight off",
-            selected = action.type == ActionType.FLASHLIGHT_OFF,
-            onClick = { onChange(ActionSelection(ActionType.FLASHLIGHT_OFF, "")) }
-        )
-        ActionOption(
-            label = "Open camera",
-            selected = action.type == ActionType.OPEN_CAMERA,
-            onClick = { onChange(ActionSelection(ActionType.OPEN_CAMERA, "")) }
-        )
-        ActionOption(
-            label = "Media play / pause",
-            selected = action.type == ActionType.MEDIA_PLAY_PAUSE,
-            onClick = { onChange(ActionSelection(ActionType.MEDIA_PLAY_PAUSE, "")) }
-        )
-        ActionOption(
-            label = "Call a contact",
-            selected = action.type == ActionType.CALL_CONTACT,
-            onClick = { onChange(ActionSelection(ActionType.CALL_CONTACT, action.payload)) }
-        )
-        if (action.type == ActionType.CALL_CONTACT) {
-            OutlinedButton(
-                onClick = {
-                    contactPermissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.READ_CONTACTS,
-                            Manifest.permission.CALL_PHONE
-                        )
-                    )
-                },
-                modifier = Modifier.fillMaxWidth().padding(start = 32.dp)
-            ) {
-                Text(
-                    pickedContactLabel
-                        ?: ActionExecutor.contactName(action.payload)
-                            .takeIf { it.isNotBlank() }
-                        ?: "Choose contact"
-                )
+        when (action.type) {
+            ActionType.LAUNCH_APP -> BindingPickerRow(pickedAppLabel ?: action.payload.ifBlank { "Choose app" },
+                { showAppPicker = true }) {
+                if (action.payload.isNotBlank()) AppRowIcon(context, action.payload)
+                else Icon(painterResource(R.drawable.ic_app_grid), null, tint = accentColor())
             }
-        }
-        ActionOption(
-            label = "Lock screen",
-            selected = action.type == ActionType.LOCK_SCREEN,
-            onClick = { onChange(ActionSelection(ActionType.LOCK_SCREEN, "")) }
-        )
-        if (action.type == ActionType.LOCK_SCREEN) {
-            Text(
-                "Needs Flick's accessibility service, turned on in Settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 32.dp)
-            )
-        }
-        ActionOption(
-            label = "Take a screenshot",
-            selected = action.type == ActionType.TAKE_SCREENSHOT,
-            onClick = { onChange(ActionSelection(ActionType.TAKE_SCREENSHOT, "")) }
-        )
-        if (action.type == ActionType.TAKE_SCREENSHOT) {
-            Text(
-                "Needs Flick's accessibility service, turned on in Settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 32.dp)
-            )
-        }
-        ActionOption(
-            label = "Open Wi-Fi settings",
-            selected = action.type == ActionType.TOGGLE_WIFI,
-            onClick = { onChange(ActionSelection(ActionType.TOGGLE_WIFI, "")) }
-        )
-        if (action.type == ActionType.TOGGLE_WIFI) {
-            Text(
-                "Android does not let an app flip Wi-Fi silently, so this opens the Wi-Fi panel for you to switch it.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 32.dp)
-            )
-        }
-        ActionOption(
-            label = "Open Bluetooth settings",
-            selected = action.type == ActionType.TOGGLE_BLUETOOTH,
-            onClick = { onChange(ActionSelection(ActionType.TOGGLE_BLUETOOTH, "")) }
-        )
-        if (action.type == ActionType.TOGGLE_BLUETOOTH) {
-            Text(
-                "Same as Wi-Fi: Android does not let an app flip Bluetooth silently, so this opens the Bluetooth panel.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 32.dp)
-            )
-        }
-        ActionOption(
-            label = "Toggle Do Not Disturb",
-            selected = action.type == ActionType.TOGGLE_DND,
-            onClick = { onChange(ActionSelection(ActionType.TOGGLE_DND, "")) }
-        )
-        if (action.type == ActionType.TOGGLE_DND) {
-            Text(
-                "Needs notification-policy access, granted once in Settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 32.dp)
-            )
-        }
-        }
-        if (showFlows) {
-            ActionOption(
-                label = "Run a flow",
-                selected = action.type == ActionType.RUN_FLOW,
-                onClick = { onChange(ActionSelection(ActionType.RUN_FLOW, action.payload)) }
-            )
-            if (action.type == ActionType.RUN_FLOW) {
-                FlowEditor(
-                    steps = FlowCodec.decode(action.payload),
-                    onChange = { steps ->
-                        onChange(ActionSelection(ActionType.RUN_FLOW, FlowCodec.encode(steps)))
-                    }
-                )
+            ActionType.OPEN_URL -> OutlinedTextField(value = action.payload,
+                onValueChange = { onChange(action.copy(payload = it)) }, label = { Text("URL, e.g. example.com") },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+            ActionType.CALL_CONTACT, ActionType.CHAT_CONTACT -> {
+                BindingPickerRow(ActionExecutor.contactName(action.payload).ifBlank { "Choose contact" }, {
+                    contactPermissionLauncher.launch(if (action.type == ActionType.CHAT_CONTACT)
+                        arrayOf(Manifest.permission.READ_CONTACTS) else arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE))
+                }) { ContactIcon(action.type, action.payload, size = 32.dp) }
+                if (ActionExecutor.contactNumber(action.payload).isNotBlank()) {
+                    TextButton(onClick = { photoPicker.launch("image/*") }) { Text("Choose custom photo") }
+                }
+            }
+            else -> {
+                val hint = when (action.type) {
+                    ActionType.LOCK_SCREEN, ActionType.TAKE_SCREENSHOT -> "Requires Accessibility service."
+                    ActionType.TOGGLE_WIFI -> "Opens the Wi-Fi panel."
+                    ActionType.TOGGLE_BLUETOOTH -> "Opens Bluetooth settings."
+                    ActionType.TOGGLE_DND -> "Requires Do Not Disturb access."
+                    else -> null
+                }
+                if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -1926,18 +1755,20 @@ private fun ActionPicker(
  * Read a contact's display name and first phone number from the Uri
  * returned by the system contact picker. Runs on a background thread.
  */
-private fun readContact(context: Context, uri: Uri): Pair<String, String>? {
+private fun readContact(context: Context, uri: Uri): Triple<String, String, String>? {
     val resolver = context.contentResolver
+    var photo: String? = null
     var id: String? = null
     var name: String? = null
     resolver.query(
         uri,
-        arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+        arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts.PHOTO_THUMBNAIL_URI),
         null, null, null
     )?.use { cursor ->
         if (cursor.moveToFirst()) {
             id = cursor.getString(0)
             name = cursor.getString(1)
+            photo = cursor.getString(2)
         }
     }
     if (id == null) return null
@@ -1951,142 +1782,33 @@ private fun readContact(context: Context, uri: Uri): Pair<String, String>? {
     )?.use { cursor ->
         if (cursor.moveToFirst()) number = cursor.getString(0)
     }
-    return if (number.isNullOrBlank()) null else Pair(name ?: number!!, number!!)
+    return if (number.isNullOrBlank()) null else Triple(name ?: number!!, number!!, photo?.let { com.ibfavas.flick.data.ContactPhoto.read(context, Uri.parse(it)) }.orEmpty())
 }
 
-/**
- * A flow editor: the steps in order, with move-up, move-down and remove
- * controls, and an "Add step" button. A flow needs at least two steps.
- */
 @Composable
-private fun FlowEditor(steps: List<FlowStep>, onChange: (List<FlowStep>) -> Unit) {
-    var showStepPicker by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.padding(start = 32.dp)) {
-        if (steps.isEmpty()) {
-            Text(
-                "A flow runs two or more actions in order. Add the first step.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        steps.forEachIndexed { index, step ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "${index + 1}. ${ActionExecutor.describeAction(step.type, step.payload)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    enabled = index > 0,
-                    onClick = {
-                        val reordered = steps.toMutableList()
-                        val moved = reordered.removeAt(index)
-                        reordered.add(index - 1, moved)
-                        onChange(reordered)
-                    }
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowUp,
-                        contentDescription = "Move up",
-                        tint = if (index > 0) FlickBrand.TextWhite
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    enabled = index < steps.size - 1,
-                    onClick = {
-                        val reordered = steps.toMutableList()
-                        val moved = reordered.removeAt(index)
-                        reordered.add(index + 1, moved)
-                        onChange(reordered)
-                    }
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowDown,
-                        contentDescription = "Move down",
-                        tint = if (index < steps.size - 1) FlickBrand.TextWhite
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = {
-                    onChange(steps.filterIndexed { i, _ -> i != index })
-                }) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Remove step",
-                        tint = FlickBrand.TextWhite
-                    )
-                }
-            }
-        }
-        if (steps.size < 2) {
-            Text(
-                "Add at least two steps to save this flow.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        OutlinedButton(
-            onClick = { showStepPicker = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Add step")
-        }
+private fun BindingPickerRow(label: String, onClick: () -> Unit, icon: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(Modifier.fillMaxWidth().clip(shape).background(accentColor().copy(alpha = .08f))
+        .border(1.dp, accentColor().copy(alpha = .55f), shape).clickable(onClick = onClick)
+        .heightIn(min = 54.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        icon()
+        Text(label, Modifier.weight(1f))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
     }
-    if (showStepPicker) {
-        FlowStepDialog(
-            onDismiss = { showStepPicker = false },
-            onAdd = { step ->
-                onChange(steps + step)
-                showStepPicker = false
-            }
-        )
-    }
-}
-
-/**
- * Pick one leaf action to add to a flow. Flows never contain flows, so
- * the "Run a flow" option is hidden here.
- */
-@Composable
-private fun FlowStepDialog(onDismiss: () -> Unit, onAdd: (FlowStep) -> Unit) {
-    var step by remember { mutableStateOf(ActionSelection(ActionType.LAUNCH_APP, "")) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add a step") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                ActionPicker(
-                    action = step,
-                    onChange = { step = it },
-                    allowFlow = false
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = step.isValid(),
-                onClick = { onAdd(FlowStep(step.type, step.payload)) }
-            ) { Text("Add") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }
 
 @Composable
 private fun ActionOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(label, color = FlickBrand.TextWhite)
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(16.dp)
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(shape)
+        .background(if (selected) colors.primary.copy(alpha = .10f) else colors.surface)
+        .border(1.dp, if (selected) colors.primary.copy(alpha = .55f) else colors.outline, shape)
+        .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+        RadioButton(selected = selected, onClick = null)
     }
 }
 
@@ -2111,8 +1833,7 @@ private object AppListCache {
  * icons and the app name only, no package names, which are
  * technical clutter. The list loads once on Dispatchers.IO
  * into AppListCache, icons load lazily per visible row, and
- * packages are deduped. Used by the New gesture flow and by
- * the flow-step picker.
+ * packages are deduped. Shared by the add and edit screens.
  */
 @Composable
 private fun AppPickerDialog(
@@ -2167,22 +1888,20 @@ private fun AppPickerDialog(
             modifier = Modifier.fillMaxWidth(0.92f),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, FlickBrand.Outline)
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Choose app",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = FlickBrand.TextWhite,
+                        "Choose app", fontFamily = FontFamily.Serif, fontSize = 28.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Filled.Close,
                             contentDescription = "Close",
-                            tint = FlickBrand.TextWhite
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -2219,16 +1938,18 @@ private fun AppPickerDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .padding(vertical = 3.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .clickable { onPick(app.label, app.packageName) }
-                                    .padding(vertical = 8.dp),
+                                    .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AppRowIcon(context = context, packageName = app.packageName)
                                 Text(
                                     app.label,
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = FlickBrand.TextWhite
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -2299,13 +2020,10 @@ private fun TestPadScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
-        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+        initial = false
     )
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
-    )
-    val strokeColorArgb by settings.strokeColor.collectAsState(
-        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
@@ -2320,16 +2038,8 @@ private fun TestPadScreen(
     // template variant on every recognition was the pad's
     // main CPU cost.
     val gestures by dao.observeAll().collectAsState(initial = emptyList())
-    val prepared = remember(gestures) {
-        Recognizer.prepareTemplates(
-            gestures.filter { it.enabled }.flatMap { it.multiTemplates() }
-        )
-    }
-    val templateToGesture = remember(gestures) {
-        gestures.flatMap { gesture ->
-            gesture.multiTemplates().map { it to gesture }
-        }.toMap()
-    }
+    val strictness by settings.strictness.collectAsState(initial = Recognizer.DEFAULT_THRESHOLD)
+    val matcher = remember(gestures) { com.ibfavas.flick.gesture.LibraryMatcher(gestures) }
     val matchedGesture = matched
     val matchedAppLabel = if (matchedGesture?.actionType == ActionType.LAUNCH_APP) {
         appLabel(matchedGesture.payload)
@@ -2347,14 +2057,10 @@ private fun TestPadScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            Text(
-                "Draw a gesture",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            FlowHeading("Recognition", "Test pad")
         }
         Text(
-            "Draw here to see what Flick recognises. Nothing runs until you tap Run.",
+            "Draw to match. Tap Run to launch.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 8.dp)
@@ -2378,20 +2084,12 @@ private fun TestPadScreen(
                         // Recognition is CPU work: off the main
                         // thread, so the pad stays responsive while
                         // it runs.
-                        val match = withContext(Dispatchers.Default) {
-                            Recognizer.recognizeMultiPrepared(raw, prepared)
-                        }
-                        // The match carries its source template,
-                        // so the gesture is found even when two
-                        // gestures share a name; the name lookup
-                        // is the fallback for older gestures.
-                        val gesture = match?.source?.let { templateToGesture[it] }
-                            ?: match?.let { m ->
-                                gestures.firstOrNull { it.name == m.template.name }
-                            }
+                        val match = withContext(Dispatchers.Default) { matcher.match(raw, strictness) }
+                        val gesture = match?.first
                         matched = gesture
-                        score = match?.let { (it.score * 100).toInt() }
+                        score = match?.let { (it.second * 100).toInt() }
                         noMatch = gesture == null
+                        if (vibrateOnRun) ActionExecutor.vibrate(context, success = gesture != null)
                     }
                 },
                 onCleared = {
@@ -2399,7 +2097,7 @@ private fun TestPadScreen(
                     score = null
                     noMatch = false
                 },
-                strokeColor = Color(strokeColorArgb),
+
                 strokeWidth = strokeWidthPx
             )
         }
@@ -2415,14 +2113,15 @@ private fun TestPadScreen(
                 noMatch -> "No match, try again"
                 else -> ""
             }
-            Text(text, style = MaterialTheme.typography.bodyMedium)
+            Text(text, modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface,
+                RoundedCornerShape(20.dp)).padding(14.dp), style = MaterialTheme.typography.bodyMedium)
         }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             enabled = matched != null,
             onClick = {
                 matched?.let {
-                    ActionExecutor.execute(context, it, Feedback(vibrateOnRun, soundOnRun))
+                    ActionExecutor.execute(context, it, Feedback(vibrateOnRun, soundOnRun), recognized = true)
                 }
             },
             modifier = Modifier
@@ -2457,46 +2156,16 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val blurPx by settings.overlayBlur.collectAsState(initial = SettingsStore.DEFAULT_BLUR_PX)
-    // Live system cross-window blur state: the phone can
-    // switch blur off at runtime, and then the blur slider does
-    // nothing no matter what it is set to. Show the real state
-    // under the slider so the user can see whether the phone
-    // supports blur at all.
-    val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-    var systemBlurOn by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                windowManager?.isCrossWindowBlurEnabled ?: true
-            } else {
-                false
-            }
-        )
-    }
-    DisposableEffect(windowManager) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && windowManager != null) {
-            val listener = Consumer<Boolean> { enabled ->
-                Handler(Looper.getMainLooper()).post { systemBlurOn = enabled }
-            }
-            windowManager.addCrossWindowBlurEnabledListener(listener)
-            systemBlurOn = windowManager.isCrossWindowBlurEnabled
-            onDispose { windowManager.removeCrossWindowBlurEnabledListener(listener) }
-        } else {
-            onDispose {}
-        }
-    }
     val opacity by settings.overlayOpacity.collectAsState(initial = SettingsStore.DEFAULT_OPACITY)
     val timeoutSeconds by settings.overlayTimeout.collectAsState(initial = SettingsStore.DEFAULT_TIMEOUT_S)
     val vibrateOnRun by settings.vibrateOnRun.collectAsState(
-        initial = SettingsStore.DEFAULT_VIBRATE_ON_RUN
+        initial = false
     )
     val soundOnRun by settings.soundOnRun.collectAsState(
         initial = SettingsStore.DEFAULT_SOUND_ON_RUN
     )
     val strokeWidthPx by settings.strokeWidth.collectAsState(
         initial = SettingsStore.DEFAULT_STROKE_WIDTH_PX
-    )
-    val strokeColorArgb by settings.strokeColor.collectAsState(
-        initial = SettingsStore.DEFAULT_STROKE_COLOR_ARGB
     )
     val accentColorArgb by settings.accentColor.collectAsState(
         initial = SettingsStore.DEFAULT_ACCENT_COLOR_ARGB
@@ -2511,7 +2180,7 @@ private fun SettingsScreen(
             scope.launch(Dispatchers.IO) {
                 try {
                     val json = Backup.export(dao.getAll())
-                    context.contentResolver.openOutputStream(uri)?.use {
+                    requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use {
                         it.write(json.toByteArray(Charsets.UTF_8))
                     }
                     withContext(Dispatchers.Main) { backupMessage = "Backup saved" }
@@ -2531,13 +2200,11 @@ private fun SettingsScreen(
             scope.launch(Dispatchers.IO) {
                 try {
                     val text = context.contentResolver.openInputStream(uri)
-                        ?.bufferedReader()?.readText() ?: ""
-                    val existing = dao.getAll().map { it.name }.toSet()
-                    val (gestures, result) = Backup.parse(text, existing)
+                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: error("Cannot open backup")
+                    val result = dao.importBackup(text)
                     if (result.error != null) {
                         withContext(Dispatchers.Main) { backupMessage = result.error }
                     } else {
-                        for (gesture in gestures) dao.insert(gesture)
                         withContext(Dispatchers.Main) {
                             backupMessage = buildString {
                                 append("Imported ${result.imported} gesture")
@@ -2578,324 +2245,177 @@ private fun SettingsScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { accessibilityGranted = FlickAccessibilityService.isEnabled(context) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(state = scroll, modifier = Modifier.fillMaxSize().accentHalo(accentColor()).padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
+        settingsSection("Overlay", "Adjust the look and timing of the pad.", onBack) {
+            SettingSlider(
+                label = "Background Blur",
+                valueText = "$blurPx px",
+                value = blurPx.toFloat(),
+                range = 0f..SettingsStore.MAX_BLUR_PX.toFloat(),
+                steps = SettingsStore.MAX_BLUR_PX - 1,
+                description = "Soften the background behind the pad.",
+                onChange = { scope.launch { settings.setOverlayBlur(it.toInt()) } }
+            )
+            HorizontalDivider()
+            SettingSlider(
+                label = "Overlay Opacity",
+                valueText = "${(opacity * 100).toInt()}%",
+                value = opacity,
+                range = 0f..1f,
+                steps = 0,
+                description = "Dim the screen behind the pad.",
+                onChange = { scope.launch { settings.setOverlayOpacity(it) } }
+            )
+            HorizontalDivider()
+            SettingSlider(
+                label = "Overlay Timeout",
+                valueText = if (timeoutSeconds == 0) "Off" else "$timeoutSeconds s",
+                value = timeoutSeconds.toFloat(),
+                range = 0f..SettingsStore.MAX_TIMEOUT_S.toFloat(),
+                steps = SettingsStore.MAX_TIMEOUT_S - 1,
+                description = "Close the idle pad after this delay.",
+                detail = "Once you start drawing, the pad stays open until you finish the gesture.",
+                onChange = { scope.launch { settings.setOverlayTimeout(it.toInt()) } }
+            )
+            HorizontalDivider()
+            SettingSlider(
+                label = "Stroke Width",
+                valueText = "${strokeWidthPx.toInt()} px",
+                value = strokeWidthPx,
+                range = SettingsStore.MIN_STROKE_WIDTH_PX..SettingsStore.MAX_STROKE_WIDTH_PX,
+                steps = (SettingsStore.MAX_STROKE_WIDTH_PX - SettingsStore.MIN_STROKE_WIDTH_PX).toInt() - 1,
+                description = "Width of the drawn line.",
+                onChange = { scope.launch { settings.setStrokeWidth(it) } }
+            )
+            HorizontalDivider()
+            val padStyle by settings.padStyle.collectAsState(initial = PadStyle.FULL_SCREEN)
+            val card = padStyle == PadStyle.CARD
+            SettingRow("Drawing pad style", if (card) "Card · Turn off for full screen." else "Full screen · Turn on for card.",
+                value = {
+                    Switch(checked = card, onCheckedChange = { enabled ->
+                        scope.launch { settings.setPadStyle(if (enabled) PadStyle.CARD else PadStyle.FULL_SCREEN) }
+                    }, modifier = Modifier.semantics { contentDescription = "Card drawing pad" })
+                })
+        }
+        settingsSection("General", "Appearance, recognition and backups.") {
+            SettingSwitch(
+                title = "Haptic feedback",
+                description = "Vibrate on a match or miss.",
+                checked = vibrateOnRun,
+                onChange = { scope.launch { settings.setVibrateOnRun(it) } }
+            )
+            HorizontalDivider()
+            AccentSetting(accentColorArgb) {
+                scope.launch { settings.setAccentColor(it) }
+            }
+            HorizontalDivider()
+            val threshold by settings.strictness.collectAsState(initial = Recognizer.DEFAULT_THRESHOLD)
+            val range = .82f.. .92f
+            val percent = ((threshold - range.start) / (range.endInclusive - range.start) * 100).roundToInt()
+            SettingSlider("Match strictness", "$percent%", threshold, range, 9,
+                "Higher values need a closer match.") { scope.launch { settings.setStrictness(it) } }
+            HorizontalDivider()
+            SettingRow("Test vibration", "Preview haptic feedback.", value = {
+                TextButton(enabled = vibrateOnRun, onClick = { ActionExecutor.testVibrate(context) }) { Text("Test") }
+            })
+            HorizontalDivider()
+            SettingSwitch(
+                title = "Sound on run",
+                description = "Play a tone on launch.",
+                checked = soundOnRun,
+                onChange = { scope.launch { settings.setSoundOnRun(it) } }
+            )
+            HorizontalDivider()
+            var automatic by remember { mutableStateOf(com.ibfavas.flick.data.GestureBackupAgent.enabled(context)) }
+            SettingSwitch("Auto backup", "Include gestures in Android backup and restore.", automatic) {
+                automatic = it
+                com.ibfavas.flick.data.GestureBackupAgent.setEnabled(context, it)
+            }
+            HorizontalDivider()
+            SettingRow("Gesture backup", "Save or restore a backup file.") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { exportLauncher.launch("flick-backup.json") }) { Text("Export") }
+                    TextButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("Import") }
                 }
-                Text(
-                    "Settings",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = FlickBrand.TextWhite
-                )
             }
-        }
-        item {
-            SettingsSection(title = "Permissions") {
-                PermissionRow(
-                    title = "Appear over apps",
-                    description = "Ready for the drawing overlay.",
-                    granted = overlayGranted,
-                    grantedText = "Enabled",
-                    onAllow = {
-                        overlayLauncher.launch(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + context.packageName)
-                            )
-                        )
-                    }
-                )
-                PermissionRow(
-                    title = "Accessibility service (Optional)",
-                    description = if (accessibilityGranted) {
-                        "Enabled. Lock screen and screenshot actions will work."
-                    } else {
-                        "Needed for the lock screen and screenshot actions."
-                    },
-                    granted = accessibilityGranted,
-                    grantedText = "Enabled",
-                    onAllow = {
-                        accessibilityLauncher.launch(
-                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        )
-                    },
-                    allowText = "Open"
-                )
-                PermissionRow(
-                    title = "Camera",
-                    description = if (cameraGranted) {
-                        "Granted. Flashlight actions will work."
-                    } else {
-                        "Needed for the flashlight actions."
-                    },
-                    granted = cameraGranted,
-                    grantedText = "Granted",
-                    onAllow = { cameraLauncher.launch(Manifest.permission.CAMERA) }
-                )
-            }
-        }
-        item {
-            SettingsSection(title = "Overlay") {
-                SettingSlider(
-                    label = "Background Blur",
-                    valueText = "${blurPx}px",
-                    value = blurPx.toFloat(),
-                    range = 0f..SettingsStore.MAX_BLUR_PX.toFloat(),
-                    steps = SettingsStore.MAX_BLUR_PX - 1,
-                    description = "Frosted glass background blur when the drawing pad is active (Android 12 and up).",
-                    onChange = { scope.launch { settings.setOverlayBlur(it.toInt()) } }
-                )
+            backupMessage?.let {
                 Text(
-                    text = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                        "System blur: not available on this Android version."
-                    } else if (systemBlurOn) {
-                        "System blur: on."
-                    } else {
-                        "System blur: off. This phone has blur switched off, so the pad uses a darker tint instead."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                SettingSlider(
-                    label = "Overlay opacity",
-                    valueText = "${(opacity * 100).toInt()}%",
-                    value = opacity,
-                    range = 0f..1f,
-                    steps = 0,
-                    description = "Controls how dim the screen gets while the overlay is open.",
-                    onChange = { scope.launch { settings.setOverlayOpacity(it) } }
-                )
-                SettingSlider(
-                    label = "Overlay timeout",
-                    valueText = if (timeoutSeconds == 0) "Off" else "${timeoutSeconds}s",
-                    value = timeoutSeconds.toFloat(),
-                    range = 0f..SettingsStore.MAX_TIMEOUT_S.toFloat(),
-                    steps = SettingsStore.MAX_TIMEOUT_S - 1,
-                    description = "Seconds the pad waits with no gesture before closing on its own. " +
-                        "Disabled while multi-stroke is on, the overlay stays open once you start drawing.",
-                    onChange = { scope.launch { settings.setOverlayTimeout(it.toInt()) } }
-                )
-            }
-        }
-        item {
-            // Stroke: width slider and colour presets. The
-            // stroke is 14px cyan unless the user changes it
-            // here.
-            SettingsSection(title = "Stroke") {
-                SettingSlider(
-                    label = "Stroke width",
-                    valueText = "${strokeWidthPx.toInt()}px",
-                    value = strokeWidthPx,
-                    range = SettingsStore.MIN_STROKE_WIDTH_PX..SettingsStore.MAX_STROKE_WIDTH_PX,
-                    steps = (SettingsStore.MAX_STROKE_WIDTH_PX - SettingsStore.MIN_STROKE_WIDTH_PX).toInt() - 1,
-                    description = "How thick the drawn stroke is on every pad.",
-                    onChange = { scope.launch { settings.setStrokeWidth(it) } }
-                )
-                Text(
-                    "Stroke colour",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = FlickBrand.TextWhite
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SettingsStore.STROKE_COLOR_PRESETS.forEach { argb ->
-                        StrokeSwatch(
-                            color = Color(argb),
-                            selected = argb == strokeColorArgb,
-                            onClick = { scope.launch { settings.setStrokeColor(argb) } }
-                        )
-                    }
-                }
-                Text(
-                    "The colour of the stroke you draw. Gesture cards in the list follow the app colour below.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        item {
-            // App colour: the accent used across the app,
-            // buttons, selections, highlights, the Save pill and
-            // gesture glyphs. The stroke colour above stays separate.
-            SettingsSection(title = "App colour") {
-                Text(
-                    "Accent colour",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = FlickBrand.TextWhite
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SettingsStore.ACCENT_COLOR_PRESETS.forEach { argb ->
-                        StrokeSwatch(
-                            color = Color(argb),
-                            selected = argb == accentColorArgb,
-                            onClick = { scope.launch { settings.setAccentColor(argb) } },
-                            ringColor = FlickBrand.TextWhite
-                        )
-                    }
-                }
-                Text(
-                    "Buttons, selections, highlights and gesture glyphs use this colour across the app. The stroke colour stays separate.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        item {
-            // The test pad moved here: the home page has no
-            // "Draw a gesture" button any more, so this is the way in.
-            SettingsSection(title = "Test") {
-                Text(
-                    "Draw a gesture to see what Flick recognises, with the match confidence. " +
-                        "Nothing runs until you tap Run.",
+                    it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                OutlinedButton(
-                    onClick = onTest,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open test pad")
-                }
-            }
-        }
-        item {
-            SettingsSection(title = "Feedback") {
-                SettingSwitch(
-                    title = "Vibrate on run",
-                    description = "A short vibration when a gesture is recognised and runs.",
-                    checked = vibrateOnRun,
-                    onChange = { scope.launch { settings.setVibrateOnRun(it) } }
-                )
-                OutlinedButton(
-                    onClick = { ActionExecutor.testVibrate(context) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Test vibration")
-                }
-                SettingSwitch(
-                    title = "Sound on run",
-                    description = "A short beep when a gesture is recognised and runs.",
-                    checked = soundOnRun,
-                    onChange = { scope.launch { settings.setSoundOnRun(it) } }
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
+            HorizontalDivider()
+            SettingRow("Open test pad", "Check gesture recognition.", value = { ValuePill("Open", onTest) })
+            HorizontalDivider()
+            SettingRow("Open battery settings", "Manage background power use.", value = {
+                ValuePill("Open") { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            })
+
         }
-        item {
-            SettingsSection(title = "Widgets") {
-                Text(
-                    "Add a Flick widget to your home screen. Tap any widget to open the gesture pad.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                WidgetRow(
-                    title = "Flick (Round)",
-                    description = "1x1. The Flick logo on a black disc.",
-                    onAdd = { pinWidget(context, FlickRoundWidgetProvider::class.java) }
-                )
-                WidgetRow(
-                    title = "Flick (Invisible)",
-                    description = "2x1. Fully transparent, looks like empty space.",
-                    onAdd = { pinWidget(context, FlickWidgetProvider::class.java) }
-                )
-                WidgetRow(
-                    title = "Flick (Wide)",
-                    description = "3x1. The flick wordmark on black.",
-                    onAdd = { pinWidget(context, FlickWideWidgetProvider::class.java) }
-                )
-            }
-        }
-        item {
-            SettingsSection(title = "Backup") {
-                Text(
-                    "Save all your gestures to a file, or bring them back from one. " +
-                        "Importing never duplicates a gesture you already have.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { exportLauncher.launch("flick-backup.json") },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Export")
-                    }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json")) },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Import")
-                    }
-                }
-                backupMessage?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = FlickBrand.TextWhite
+        settingsSection("Permissions", "Access needed for phone actions.") {
+            PermissionRow(
+                title = "Appear over apps",
+                description = "Display the drawing overlay.",
+                granted = overlayGranted,
+                grantedText = "Enabled",
+                onAllow = {
+                    overlayLauncher.launch(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + context.packageName)
+                        )
                     )
                 }
-            }
+            )
+            HorizontalDivider()
+            PermissionRow(
+                title = "Accessibility service",
+                description = "Lock and screenshot actions.",
+                granted = accessibilityGranted,
+                grantedText = "Enabled",
+                onAllow = {
+                    accessibilityLauncher.launch(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    )
+                },
+                allowText = "Open"
+            )
+            HorizontalDivider()
+            PermissionRow(
+                title = "Camera",
+                description = "Use the flashlight.",
+                granted = cameraGranted,
+                grantedText = "Granted",
+                onAllow = { cameraLauncher.launch(Manifest.permission.CAMERA) }
+            )
         }
-        item {
-            SettingsSection(title = "Triggers") {
-                Text(
-                    "Add the Flick widget to your home screen: the invisible one is " +
-                        "fully transparent, so it looks like empty space. There are " +
-                        "also two visible widgets: a round one showing the Flick logo, " +
-                        "and a wide one showing the flick wordmark. Tap any of them " +
-                        "to open the gesture pad. You can also add the Flick tile " +
-                        "from the Quick Settings panel.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Note: Android widgets only support taps, not stroke tracking. " +
-                        "Drawing happens in the frosted-glass pad that opens when you " +
-                        "tap the widget, not inside the widget itself.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        settingsSection("Widgets", "Add a shortcut to your home screen.") {
+            WidgetRow(
+                title = "Flick (Round)",
+                description = "1 × 1 · Gesture pad shortcut",
+                onAdd = { pinWidget(context, FlickRoundWidgetProvider::class.java) }
+            )
+            HorizontalDivider()
+            WidgetRow(
+                title = "Flick (Invisible)",
+                description = "2 × 1 · Invisible tap area",
+                onAdd = { pinWidget(context, FlickWidgetProvider::class.java) }
+            )
+            HorizontalDivider()
+            WidgetRow(
+                title = "Flick (Wide)",
+                description = "3 × 1 · Flick wordmark",
+                onAdd = { pinWidget(context, FlickWideWidgetProvider::class.java) }
+            )
         }
-        item {
-            SettingsSection(title = "Reliability") {
-                Text(
-                    "Let Flick run without battery limits, so the widget and tile " +
-                        "respond instantly.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FlickBrand.TextWhite
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                        )
-                    }
-                ) {
-                    Text("Open battery settings")
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    "Your gestures are stored only on this device. Nothing is uploaded.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        item(key = "support") {
+            Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.support_button), "Buy me a coffee",
+                    Modifier.size(196.dp, 56.dp).clip(RoundedCornerShape(10.dp))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button) { openSupportPage(context) })
             }
         }
     }
@@ -2904,54 +2424,11 @@ private fun SettingsScreen(
 private fun overlayGranted(context: Context): Boolean =
     Settings.canDrawOverlays(context)
 
-/** One settings section: a title above a rounded near-black card. */
-@Composable
-private fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    Column {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = FlickBrand.TextWhite,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, FlickBrand.Outline, RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            content()
-        }
-    }
-}
-
-/** One widget row: name, description, and an Add button that asks the launcher to pin it. */
 @Composable
 private fun WidgetRow(title: String, description: String, onAdd: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = FlickBrand.TextWhite
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        OutlinedButton(onClick = onAdd) {
-            Text("Add")
-        }
-    }
+    SettingRow(title, description,
+        detail = "Tap Add or choose Flick in your launcher’s widget picker. Tap the widget to draw on the pad. You can also add the Flick tile from Quick Settings.",
+        value = { ValuePill("Add", onAdd) })
 }
 
 /**
@@ -2986,142 +2463,32 @@ private fun PermissionRow(
     onAllow: () -> Unit,
     allowText: String = "Allow"
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = FlickBrand.TextWhite
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        if (granted) {
-            Text(
-                grantedText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = FlickBrand.TextWhite,
-                modifier = Modifier
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(20.dp)
-                    )
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-            )
-        } else {
-            OutlinedButton(onClick = onAllow) {
-                Text(allowText)
-            }
-        }
-    }
+    SettingRow(title, description, value = {
+        if (granted) ValuePill(grantedText) else ValuePill(allowText, onAllow)
+    })
 }
 
-/** A labelled switch row with a description underneath. */
 @Composable
-private fun SettingSwitch(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = FlickBrand.TextWhite
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
+private fun SettingSwitch(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    SettingRow(title, description, value = { Switch(checked, onCheckedChange = onChange) })
 }
 
-/**
- * One colour swatch: a filled circle, ringed when selected. The ring
- * is the app accent by default; the accent picker itself passes white,
- * so the ring reads on whichever accent is selected.
- */
 @Composable
-private fun StrokeSwatch(
-    color: Color,
-    selected: Boolean,
-    onClick: () -> Unit,
-    ringColor: Color? = null
-) {
-    val ring = ringColor ?: accentColor()
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) ring else FlickBrand.Outline,
-                shape = CircleShape
-            )
-            .clickable(onClick = onClick)
-    )
-}
-
-/** A labelled slider with a value chip and a description underneath. */
-@Composable
-private fun SettingSlider(
-    label: String,
-    valueText: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    description: String,
-    onChange: (Float) -> Unit
-) {
+private fun FlowHeading(step: String, title: String) {
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyLarge,
-                color = FlickBrand.TextWhite,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                valueText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = FlickBrand.TextWhite,
-                modifier = Modifier
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
+        Text(step, style = MaterialTheme.typography.labelMedium, color = accentColor())
+        Text(title, fontFamily = FontFamily.Serif, fontSize = 30.sp, lineHeight = 34.sp)
+    }
+}
+
+@Composable
+private fun SampleProgress(count: Int, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        repeat(Gesture.MAX_SAMPLES) { i ->
+            Box(Modifier.size(18.dp, 5.dp).background(
+                if (i < count) accentColor() else MaterialTheme.colorScheme.outline, CircleShape))
         }
-        Slider(
-            value = value,
-            onValueChange = onChange,
-            valueRange = range,
-            steps = steps
-        )
-        Text(
-            description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Spacer(Modifier.width(3.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }

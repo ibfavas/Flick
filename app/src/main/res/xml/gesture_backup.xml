@@ -1,0 +1,6 @@
+<full-backup-content>
+        <include domain="database" path="flick.db" />
+        <include domain="database" path="flick.db-wal" />
+        <include domain="database" path="flick.db-journal" />
+        <include domain="sharedpref" path="gesture_backup.xml" />
+</full-backup-content>

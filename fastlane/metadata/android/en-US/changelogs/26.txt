@@ -1,0 +1,1 @@
+Flick 2.0 adds contact-call gestures, usage stats, launch history, conflict warnings, adaptive matching, undo and quick actions. Choose a full-screen or card drawing pad, adjust match strictness and enable Android backup. The dark theme has a lime default accent and redesigned widgets. Flows have been removed.

@@ -24,21 +24,42 @@ class CrashActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val text = loadReport()
+        fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(24), dp(20), dp(20))
+            addView(TextView(this@CrashActivity).apply {
+                this.text = "Crash report"
+                textSize = 30f
+                typeface = Typeface.SERIF
+                setTextColor(android.graphics.Color.WHITE)
+                setPadding(0, 0, 0, dp(16))
+            })
+        }
         val textView = TextView(this).apply {
             this.text = text
             textSize = 13f
             typeface = Typeface.MONOSPACE
-            setPadding(24, 24, 24, 24)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setTextColor(android.graphics.Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xff101011.toInt())
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), 0xff363639.toInt())
+            }
         }
+        content.addView(textView)
         val scrollView = ScrollView(this).apply {
             addView(
-                textView,
+                content,
                 ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
         }
+        scrollView.fitsSystemWindows = true
+        scrollView.setBackgroundColor(android.graphics.Color.BLACK)
         setContentView(scrollView)
     }
 

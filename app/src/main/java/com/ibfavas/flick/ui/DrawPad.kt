@@ -85,8 +85,7 @@ private fun appendToPath(path: Path, prev: Offset, next: Offset) {
  * extended one segment per new point, never rebuilt from
  * scratch.
  *
- * The stroke colour and width come from Settings (cyan,
- * 14px by default). The Done/Clear chips are part of the
+ * The stroke uses the app accent and configured width. The Done/Clear chips are part of the
  * pad's chrome in the app, but the transparent overlay pad
  * hides them (showControls = false): there a gesture is
  * recognised automatically when the timer expires, so the
@@ -107,13 +106,12 @@ fun DrawPad(
     // over any background. Used by the frosted-glass pad, which
     // sits on top of whatever the user was doing.
     strokeOutline: Boolean = false,
-    /** The stroke colour, from Settings (cyan by default). */
-    strokeColor: Color = FlickBrand.StrokeColor,
     /** The stroke width in px, from Settings (14px by default). */
     strokeWidth: Float = FlickBrand.StrokeWidth,
     /** Show the Done/Clear chips. False on the overlay pad. */
     showControls: Boolean = true
 ) {
+    val strokeColor = accentColor()
     var strokes by remember { mutableStateOf(listOf<List<Offset>>()) }
     var currentStroke by remember { mutableStateOf(listOf<Offset>()) }
     val strokePaths = remember { mutableStateListOf<Path>() }
@@ -130,6 +128,10 @@ fun DrawPad(
         showHint = false
     }
 
+    // The pointer input coroutine lives for the pad lifetime. Dispatch to the current
+    // library/settings callback even when the database loads after the first composition.
+    val finished by androidx.compose.runtime.rememberUpdatedState(onGestureFinished)
+
     fun finishGesture() {
         timerJob?.cancel()
         timerJob = null
@@ -141,7 +143,7 @@ fun DrawPad(
         lastRaw = null
         val totalPoints = done.sumOf { it.size }
         if (done.isNotEmpty() && totalPoints >= 2) {
-            onGestureFinished(done.map { points -> points.map { StrokePoint(it.x, it.y) } })
+            finished(done.map { points -> points.map { StrokePoint(it.x, it.y) } })
         }
     }
 
