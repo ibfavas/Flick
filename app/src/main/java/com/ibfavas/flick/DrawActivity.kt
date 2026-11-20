@@ -237,8 +237,10 @@ private fun DrawScreen(
         when (phase) {
             PadPhase.CHECKING -> {
                 val input = strokes.toList()
-                // A complete short gesture may also be the start of a longer one.
-                delay(if (input.size < matcher.maxStrokeCount) STROKE_TIMEOUT_MS else 65L)
+                val liftedAt = android.os.SystemClock.uptimeMillis()
+                val couldContinue = withContext(Dispatchers.Default) { matcher.couldContinue(input, strictness) }
+                val window = if (couldContinue) STROKE_TIMEOUT_MS else 65L
+                delay(window - (android.os.SystemClock.uptimeMillis() - liftedAt))
                 val hasEnoughPoints = input.sumOf { it.size } >= 2
                 val gesture = if (!hasEnoughPoints) null else withContext(Dispatchers.Default) { matcher.match(input, strictness)?.first }
                 if (closed || phase != PadPhase.CHECKING) return@LaunchedEffect

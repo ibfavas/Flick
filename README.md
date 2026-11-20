@@ -52,7 +52,7 @@ Choose your pad in **Settings → Overlay → Drawing pad style**. Leave the swi
 
 Flick compares your drawing with the samples saved for your enabled gestures. You can draw a shape in one continuous line or build it from several strokes. If you draw the same shape a little differently one-handed, save that version as a second or third sample.
 
-**Lifting between strokes.** If an enabled sample uses more strokes than you have drawn so far, the pad gives you 900 ms to start the next stroke. This lets a short gesture and a longer one share the same beginning. Pause to launch the short gesture, or keep drawing to finish the longer one.
+**Lifting between strokes.** If your drawing resembles the opening strokes of a longer enabled sample, the pad gives you 900 ms to start the next stroke. This lets a short gesture and a longer one share the same beginning. Pause to launch the short gesture, or keep drawing to finish the longer one. Unrelated gestures go straight to recognition.
 
 **Similar shapes.** When you record a gesture that resembles an existing one, Flick warns you and lets you redraw or keep it. During recognition, a gesture must both clear the match threshold and beat the next-best gesture by a minimum margin.
 

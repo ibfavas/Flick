@@ -11,6 +11,15 @@ class LibraryMatcher(gestures: List<Gesture>) {
     private val prepared = Recognizer.prepareTemplates(owners.keys.toList())
     private val hasExperience = owners.values.any { it.learnedUses > 0 }
 
+    private val openings = java.util.concurrent.ConcurrentHashMap<Int, List<Recognizer.PreparedTemplate>>()
+
+    fun couldContinue(raw: List<List<StrokePoint>>, threshold: Float): Boolean {
+        val strokes = raw.filter { it.size >= 2 }
+        if (strokes.isEmpty() || strokes.size >= maxStrokeCount) return false
+        val candidates = openings.computeIfAbsent(strokes.size) { Recognizer.prepareOpenings(owners.keys, it) }
+        return Recognizer.resemblesOpening(strokes, candidates, threshold)
+    }
+
     fun match(raw: List<List<StrokePoint>>, threshold: Float = Recognizer.DEFAULT_THRESHOLD): Pair<Gesture, Float>? {
         val normal = Recognizer.recognizeMultiPrepared(raw, prepared, threshold)
         if (normal != null) return owners[normal.source]?.let { it to normal.score }

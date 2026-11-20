@@ -123,6 +123,29 @@ object Recognizer {
             )
         }
 
+    /** Prepare the possible first [count] strokes under the matcher's stroke-order rules. */
+    internal fun prepareOpenings(templates: Collection<MultiTemplate>, count: Int): List<PreparedTemplate> {
+        val openings = mutableSetOf<List<List<StrokePoint>>>()
+        for (template in templates) {
+            val strokes = template.strokes
+            if (strokes.size <= count) continue
+            val orders = if (strokes.size <= MAX_PERMUTED_STROKES) permutations(strokes) else listOf(strokes)
+            for (order in orders) {
+                openings.add(order.take(count))
+                openings.add(order.takeLast(count).asReversed().map { it.asReversed() })
+            }
+        }
+        // All openings share one name. Two similar openings both mean "keep drawing".
+        return openings.map { strokes ->
+            val raw = strokes.flatten()
+            val variant = PreparedVariant(normalizeMulti(strokes), raw, isOpenPath(raw), indicativeAngle(raw))
+            PreparedTemplate(MultiTemplate("opening", strokes), "opening", count, listOf(variant))
+        }
+    }
+
+    internal fun resemblesOpening(raw: List<List<StrokePoint>>, openings: List<PreparedTemplate>, threshold: Float): Boolean =
+        openings.isNotEmpty() && matchPrepared(raw, openings, threshold, openDtw = false) != null
+
     /** Normalize a raw stroke into canonical form. */
     fun normalize(raw: List<StrokePoint>): List<StrokePoint> {
         if (raw.size < 2) return raw
